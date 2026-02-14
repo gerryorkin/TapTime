@@ -1,0 +1,202 @@
+//
+//  DraggableMapView.swift
+//  TapTime
+//
+//  Created by Gerry Orkin on 13/2/2026.
+//
+
+import SwiftUI
+import MapKit
+
+// Custom annotation class for draggable pins
+class DraggableAnnotation: NSObject, MKAnnotation {
+    var coordinate: CLLocationCoordinate2D
+    let id: UUID
+    let title: String?
+    let subtitle: String?
+    
+    init(id: UUID, coordinate: CLLocationCoordinate2D, title: String?, subtitle: String?) {
+        self.id = id
+        self.coordinate = coordinate
+        self.title = title
+        self.subtitle = subtitle
+        super.init()
+    }
+}
+
+struct DraggableMapView: UIViewRepresentable {
+    @ObservedObject var locationManager: LocationManager
+    @Binding var cameraPosition: MKCoordinateRegion
+    let onTap: (CLLocationCoordinate2D) -> Void
+    let showTimezoneLines: Bool
+    let showCountryLabels: Bool
+    
+    func makeUIView(context: Context) -> MKMapView {
+        let mapView = MKMapView()
+        mapView.delegate = context.coordinator
+        mapView.showsUserLocation = true
+        mapView.showsCompass = false
+        
+        // Add tap gesture
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        mapView.addGestureRecognizer(tapGesture)
+        
+        return mapView
+    }
+    
+    func updateUIView(_ mapView: MKMapView, context: Context) {
+        // Update region if needed, but only if it's a significant change to avoid feedback loops
+        let currentRegion = mapView.region
+        let threshold = 0.0001 // Minimum difference to trigger update
+        
+        if abs(currentRegion.center.latitude - cameraPosition.center.latitude) > threshold ||
+           abs(currentRegion.center.longitude - cameraPosition.center.longitude) > threshold ||
+           abs(currentRegion.span.latitudeDelta - cameraPosition.span.latitudeDelta) > threshold ||
+           abs(currentRegion.span.longitudeDelta - cameraPosition.span.longitudeDelta) > threshold {
+            context.coordinator.shouldUpdateBinding = false // Prevent feedback
+            mapView.setRegion(cameraPosition, animated: true)
+        }
+        
+        // Update annotations to show red dots
+        context.coordinator.updateAnnotations(on: mapView, with: locationManager.savedLocations)
+        
+        // Update timezone overlays
+        context.coordinator.updateTimezoneOverlays(on: mapView, show: showTimezoneLines)
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, MKMapViewDelegate {
+        var parent: DraggableMapView
+        private var currentAnnotations: [UUID: DraggableAnnotation] = [:]
+        private var timezoneOverlays: [MKPolyline] = []
+        var shouldUpdateBinding = true
+        
+        init(_ parent: DraggableMapView) {
+            self.parent = parent
+        }
+        
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let mapView = gesture.view as? MKMapView else { return }
+            let point = gesture.location(in: mapView)
+            let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
+            parent.onTap(coordinate)
+        }
+        
+        func updateAnnotations(on mapView: MKMapView, with locations: [SavedLocation]) {
+            // Remove annotations that no longer exist
+            let currentIDs = Set(locations.map { $0.id })
+            let annotationsToRemove = currentAnnotations.values.filter { !currentIDs.contains($0.id) }
+            mapView.removeAnnotations(Array(annotationsToRemove))
+            annotationsToRemove.forEach { currentAnnotations.removeValue(forKey: $0.id) }
+            
+            // Add or update annotations
+            for location in locations {
+                if let existingAnnotation = currentAnnotations[location.id] {
+                    // Update coordinate if changed
+                    if existingAnnotation.coordinate.latitude != location.coordinate.latitude ||
+                       existingAnnotation.coordinate.longitude != location.coordinate.longitude {
+                        existingAnnotation.coordinate = location.coordinate
+                    }
+                } else {
+                    // Create new annotation
+                    let annotation = DraggableAnnotation(
+                        id: location.id,
+                        coordinate: location.coordinate,
+                        title: location.locationName,
+                        subtitle: location.timeZone.identifier
+                    )
+                    currentAnnotations[location.id] = annotation
+                    mapView.addAnnotation(annotation)
+                }
+            }
+        }
+        
+        func updateTimezoneOverlays(on mapView: MKMapView, show: Bool) {
+            if show && timezoneOverlays.isEmpty {
+                // Add timezone lines
+                for offset in -12..<13 {
+                    let longitude = Double(offset) * 15.0
+                    let coordinates = [
+                        CLLocationCoordinate2D(latitude: -90, longitude: longitude),
+                        CLLocationCoordinate2D(latitude: 90, longitude: longitude)
+                    ]
+                    let polyline = MKPolyline(coordinates: coordinates, count: 2)
+                    timezoneOverlays.append(polyline)
+                    mapView.addOverlay(polyline)
+                }
+            } else if !show && !timezoneOverlays.isEmpty {
+                // Remove timezone lines
+                mapView.removeOverlays(timezoneOverlays)
+                timezoneOverlays.removeAll()
+            }
+        }
+        
+        // MARK: - MKMapViewDelegate
+        
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            // Don't customize user location
+            if annotation is MKUserLocation {
+                return nil
+            }
+            
+            guard annotation is DraggableAnnotation else {
+                return nil
+            }
+            
+            let identifier = "DraggablePin"
+            var annotationView = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+            
+            if annotationView == nil {
+                annotationView = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+                annotationView?.canShowCallout = false // No popup
+                annotationView?.isDraggable = false // Not draggable anymore
+                annotationView?.animatesWhenAdded = false // Don't animate when added
+            } else {
+                annotationView?.annotation = annotation
+            }
+            
+            // Simple red dot
+            annotationView?.markerTintColor = .red
+            annotationView?.glyphImage = nil
+            annotationView?.displayPriority = .required // Keep size consistent
+            
+            return annotationView
+        }
+        
+        func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
+            // Immediately deselect so pins never stay enlarged
+            mapView.deselectAnnotation(annotation, animated: false)
+        }
+
+        // Remove the old delete button handler
+        @objc func deleteButtonTapped(_ sender: UIButton) {
+            // No longer needed
+        }
+        
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let polyline = overlay as? MKPolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                renderer.strokeColor = UIColor.blue.withAlphaComponent(0.3)
+                renderer.lineWidth = 1
+                return renderer
+            }
+            return MKOverlayRenderer(overlay: overlay)
+        }
+        
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            // Only update binding if the change originated from user interaction
+            guard shouldUpdateBinding else {
+                shouldUpdateBinding = true // Reset flag
+                return
+            }
+            
+            // Use a transaction to prevent triggering view updates
+            Task { @MainActor in
+                parent.cameraPosition = mapView.region
+            }
+        }
+    }
+}
