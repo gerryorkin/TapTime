@@ -6,8 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		6A9B4E262F42960D0079BB2F /* SavedMeeting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A9B4E252F42960D0079BB2F /* SavedMeeting.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		6A621D602F3EE6C200F25082 /* TapTime.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TapTime.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6A9B4E252F42960D0079BB2F /* SavedMeeting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedMeeting.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +39,7 @@
 			children = (
 				6A621D622F3EE6C200F25082 /* TapTime */,
 				6A621D612F3EE6C200F25082 /* Products */,
+				6A9B4E252F42960D0079BB2F /* SavedMeeting.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -119,6 +125,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6A9B4E262F42960D0079BB2F /* SavedMeeting.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

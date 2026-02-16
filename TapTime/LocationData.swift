@@ -13,13 +13,15 @@ struct SavedLocation: Identifiable, Equatable, Codable {
     var coordinate: CLLocationCoordinate2D // Changed to var to allow updates
     var timeZone: TimeZone // Changed to var to allow updates
     var locationName: String // Changed to var to allow updates
+    var isLocked: Bool // Whether this location is protected from clearing
     
     // Default initializer that generates a new ID
-    init(id: UUID = UUID(), coordinate: CLLocationCoordinate2D, timeZone: TimeZone, locationName: String) {
+    init(id: UUID = UUID(), coordinate: CLLocationCoordinate2D, timeZone: TimeZone, locationName: String, isLocked: Bool = false) {
         self.id = id
         self.coordinate = coordinate
         self.timeZone = timeZone
         self.locationName = locationName
+        self.isLocked = isLocked
     }
     
     // Computed property that always shows current time
@@ -41,7 +43,7 @@ struct SavedLocation: Identifiable, Equatable, Codable {
     
     // MARK: - Codable implementation
     enum CodingKeys: String, CodingKey {
-        case id, latitude, longitude, timeZoneIdentifier, locationName
+        case id, latitude, longitude, timeZoneIdentifier, locationName, isLocked
     }
     
     init(from decoder: Decoder) throws {
@@ -53,6 +55,7 @@ struct SavedLocation: Identifiable, Equatable, Codable {
         let timeZoneIdentifier = try container.decode(String.self, forKey: .timeZoneIdentifier)
         timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .current
         locationName = try container.decode(String.self, forKey: .locationName)
+        isLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
     }
     
     func encode(to encoder: Encoder) throws {
@@ -62,5 +65,6 @@ struct SavedLocation: Identifiable, Equatable, Codable {
         try container.encode(coordinate.longitude, forKey: .longitude)
         try container.encode(timeZone.identifier, forKey: .timeZoneIdentifier)
         try container.encode(locationName, forKey: .locationName)
+        try container.encode(isLocked, forKey: .isLocked)
     }
 }

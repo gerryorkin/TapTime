@@ -642,6 +642,12 @@ class LocationManager: NSObject, ObservableObject {
         savedLocations.removeAll { $0.id == location.id }
     }
     
+    func toggleLock(for locationId: UUID) {
+        if let index = savedLocations.firstIndex(where: { $0.id == locationId }) {
+            savedLocations[index].isLocked.toggle()
+        }
+    }
+    
     // Helper function to format location names from timezone identifiers
     private func formatLocationName(from identifier: String) -> String {
         // Split by "/" and take the last component (e.g., "Europe/Paris" -> "Paris")

@@ -172,7 +172,6 @@ struct MapSelectionView: View {
     @State private var autocompleteSuggestion = ""
     @State private var hasSetInitialPosition = false
     @State private var mapCameraRegion: MKCoordinateRegion?
-    @State private var currentTime = Date()
     @State private var showingSearchField = false
     @State private var showingSettings = false
     @State private var showingClearConfirmation = false
@@ -180,9 +179,7 @@ struct MapSelectionView: View {
     @State private var showingDuplicateAlert = false
     @FocusState private var isSearchFieldFocused: Bool
     @AppStorage("useLargePills") private var useLargePills = false
-    
-    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-    
+
     var body: some View {
         ZStack(alignment: .top) {
             // Full screen map
@@ -253,9 +250,6 @@ struct MapSelectionView: View {
                 saveMapPosition()
             }
             .ignoresSafeArea()
-            .onReceive(timer) { time in
-                currentTime = time
-            }
 
             // Settings and Clear buttons at top left
             VStack {
@@ -282,8 +276,8 @@ struct MapSelectionView: View {
                                 .background(Color.black.opacity(0.5))
                                 .clipShape(Circle())
                         }
-                        .disabled(locationManager.savedLocations.isEmpty)
-                        .opacity(locationManager.savedLocations.isEmpty ? 0.5 : 1.0)
+                        .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
+                        .opacity(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty ? 0.5 : 1.0)
                     }
                     .padding(.leading)
 
@@ -303,12 +297,14 @@ struct MapSelectionView: View {
                         ForEach(locationManager.savedLocations) { location in
                             FloatingLocationCard(
                                 location: location,
-                                currentTime: currentTime,
                                 isLarge: useLargePills,
                                 onDelete: {
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                         locationManager.removeLocation(location)
                                     }
+                                },
+                                onToggleLock: {
+                                    locationManager.toggleLock(for: location.id)
                                 }
                             )
                             .transition(.asymmetric(
@@ -546,18 +542,23 @@ struct MapSelectionView: View {
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showingSettings) {
             SettingsView(useLargePills: $useLargePills)
-                .presentationDetents([.height(200)])
+                .presentationDetents([.height(350)])
                 .presentationDragIndicator(.visible)
         }
         .alert("Clear All Locations", isPresented: $showingClearConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Clear All", role: .destructive) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    locationManager.savedLocations.removeAll()
+                    locationManager.savedLocations.removeAll { !$0.isLocked }
                 }
             }
         } message: {
-            Text("Are you sure you want to remove all saved locations?")
+            let lockedCount = locationManager.savedLocations.filter { $0.isLocked }.count
+            if lockedCount > 0 {
+                return Text("This will remove all unlocked locations. \(lockedCount) locked location\(lockedCount == 1 ? "" : "s") will remain.")
+            } else {
+                return Text("Are you sure you want to remove all saved locations?")
+            }
         }
         .alert("Not Recognised", isPresented: $showingInvalidCountry) {
             Button("OK", role: .cancel) {
@@ -646,6 +647,14 @@ struct SettingsView: View {
                 } footer: {
                     Text("Show location cards with larger text and increased padding")
                 }
+                
+                Section {
+                    Text("Made by Gerry Orkin in beautiful Austinmer, New South Wales.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -663,14 +672,18 @@ struct SettingsView: View {
 // MARK: - Floating Location Card
 struct FloatingLocationCard: View {
     let location: SavedLocation
-    let currentTime: Date
     let isLarge: Bool
     let onDelete: () -> Void
-    
+    let onToggleLock: () -> Void
+
+    @State private var currentTime = Date()
     @State private var dragOffset: CGFloat = 0
     @State private var isExpanded = false  // Start collapsed (55% visible)
     @GestureState private var isDragging = false
     @State private var backgroundOpacity: Double = 1.0  // Start white, fade to transparent
+    @State private var showColon = true  // For flashing colon
+
+    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     var body: some View {
         GeometryReader { geometry in
@@ -682,6 +695,15 @@ struct FloatingLocationCard: View {
                 if isLarge {
                     // Large pills: Two-line layout with right-aligned time
                     HStack(spacing: 16) {
+                        // Lock icon on the left - tappable
+                        Button(action: onToggleLock) {
+                            Image(systemName: location.isLocked ? "lock.fill" : "lock.open.fill")
+                                .foregroundColor(location.isLocked ? .orange : .gray.opacity(0.3))
+                                .font(.system(size: 14))
+                                .frame(width: 16)
+                        }
+                        .buttonStyle(.plain)
+                        
                         VStack(alignment: .leading, spacing: 4) {
                             // Line 1: Location name
                             Text(location.locationName)
@@ -706,13 +728,15 @@ struct FloatingLocationCard: View {
                             .font(.system(size: 18, design: .rounded))
                             .fontWeight(.bold)
                             .monospacedDigit()
+                            .opacity(showColon ? 1.0 : 0.3)
                         
                         Button(action: onDelete) {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.red)
+                                .foregroundColor(location.isLocked ? .gray.opacity(0.3) : .red)
                                 .font(.system(size: 18))
                         }
                         .buttonStyle(.plain)
+                        .disabled(location.isLocked)
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
@@ -739,6 +763,15 @@ struct FloatingLocationCard: View {
                 } else {
                     // Small pills: Single-line layout
                     HStack(spacing: 12) {
+                        // Lock icon on the left - tappable
+                        Button(action: onToggleLock) {
+                            Image(systemName: location.isLocked ? "lock.fill" : "lock.open.fill")
+                                .foregroundColor(location.isLocked ? .orange : .gray.opacity(0.3))
+                                .font(.system(size: 12))
+                                .frame(width: 14)
+                        }
+                        .buttonStyle(.plain)
+                        
                         Text(location.locationName)
                             .font(.system(size: 15))
                             .fontWeight(.semibold)
@@ -759,13 +792,15 @@ struct FloatingLocationCard: View {
                             .font(.system(size: 16, design: .rounded))
                             .fontWeight(.bold)
                             .monospacedDigit()
+                            .opacity(showColon ? 1.0 : 0.3)
                         
                         Button(action: onDelete) {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.red)
+                                .foregroundColor(location.isLocked ? .gray.opacity(0.3) : .red)
                                 .font(.system(size: 16))
                         }
                         .buttonStyle(.plain)
+                        .disabled(location.isLocked)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
@@ -810,11 +845,15 @@ struct FloatingLocationCard: View {
                             // When expanded, only allow dragging right (positive) to collapse
                             dragOffset = max(0, min(translation, collapsedOffset))
                         } else {
-                            // When collapsed, allow dragging left (expand) or right (delete)
+                            // When collapsed, allow different behaviors for locked vs unlocked
                             if translation > 0 {
-                                dragOffset = translation // Right swipe — no limit, for delete
+                                // Right swipe - only allow for unlocked items (for delete)
+                                if !location.isLocked {
+                                    dragOffset = translation
+                                }
                             } else {
-                                dragOffset = max(-collapsedOffset, translation) // Left swipe — expand
+                                // Left swipe - allow for both locked and unlocked (expand)
+                                dragOffset = max(-collapsedOffset, translation)
                             }
                         }
                     }
@@ -822,32 +861,36 @@ struct FloatingLocationCard: View {
                         let velocity = value.predictedEndTranslation.width - value.translation.width
                         let threshold = collapsedOffset * 0.3
 
-                        if !isExpanded && dragOffset > 0 {
-                            // Collapsed pill swiped right — check for delete
-                            let deleteThreshold = cardWidth * 0.3
-                            if dragOffset > deleteThreshold || velocity > 200 {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    dragOffset = cardWidth
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    onDelete()
-                                }
-                                return
-                            }
-                        }
-
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            if isExpanded {
+                        if isExpanded {
+                            // When expanded, right swipe only collapses (never deletes)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 if dragOffset > threshold || velocity > 100 {
                                     isExpanded = false
                                 }
-                            } else {
-                                if abs(dragOffset) > threshold || velocity < -100 {
-                                    isExpanded = true
+                                dragOffset = 0
+                            }
+                        } else {
+                            // When collapsed, check for delete (right swipe) - only for unlocked items
+                            if dragOffset > 0 && !location.isLocked {
+                                let deleteThreshold = cardWidth * 0.3
+                                if dragOffset > deleteThreshold || velocity > 200 {
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        dragOffset = cardWidth
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                        onDelete()
+                                    }
+                                    return
                                 }
                             }
 
-                            dragOffset = 0
+                            // Handle expand for left swipe (both locked and unlocked)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                if abs(dragOffset) > threshold || velocity < -100 {
+                                    isExpanded = true
+                                }
+                                dragOffset = 0
+                            }
                         }
                     }
             )
@@ -861,51 +904,12 @@ struct FloatingLocationCard: View {
                 backgroundOpacity = 0.0
             }
         }
-    }
-    
-    private func formattedTime() -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = location.timeZone
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return formatter.string(from: currentTime)
-    }
-}
-
-// MARK: - Location Row
-struct LocationRow: View {
-    let location: SavedLocation
-    let currentTime: Date
-    let onDelete: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(location.locationName)
-                    .font(.headline)
-                
-                Text(location.timeZone.abbreviation() ?? location.timeZone.identifier)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            Text(formattedTime())
-                .font(.system(.title3, design: .rounded))
-                .fontWeight(.semibold)
-                .monospacedDigit()
-            
-            Button(action: onDelete) {
-                Image(systemName: "trash")
-                    .foregroundColor(.red)
-            }
-            .buttonStyle(.plain)
+        .onReceive(timer) { _ in
+            currentTime = Date()
+            showColon.toggle()  // Toggle colon visibility every second
         }
-        .padding()
-        .contentShape(Rectangle())
     }
-    
+
     private func formattedTime() -> String {
         let formatter = DateFormatter()
         formatter.timeZone = location.timeZone
@@ -920,108 +924,380 @@ struct TimesListView: View {
     @ObservedObject var locationManager: LocationManager
     let onBack: () -> Void
     
-    @State private var selectedDate = Date()
+    @AppStorage("selectedDateTimestamp") private var selectedDateTimestamp: Double = Date().timeIntervalSince1970
+    @AppStorage("selectedLocationID") private var selectedLocationIDString: String = ""
     
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header with Back button
-            HStack {
-                Button(action: onBack) {
-                    HStack {
-                        Image(systemName: "chevron.left")
-                        Text("Map")
-                    }
-                }
-                .buttonStyle(.plain)
-                
-                Spacer()
-                
-                Text("World Times")
-                    .font(.headline)
-                
-                Spacer()
-                
-                // Placeholder for alignment
-                HStack {
-                    Image(systemName: "chevron.left")
-                    Text("Map")
-                }
-                .hidden()
-            }
-            .padding()
-            .background(.ultraThinMaterial)
-            
-            // Interactive Calendar and Time Scrubber
-            DraggableCalendarView(selectedDate: $selectedDate)
-            
-            Divider()
-            
-            // Scrollable list of locations
-            ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 12) {
-                    // User's location
-                    CompactTimeCard(
-                        title: "Your Location",
-                        timeZone: locationManager.userTimeZone,
-                        selectedDate: selectedDate,
-                        isUserLocation: true,
-                        onDelete: nil
-                    )
-                    .padding(.horizontal, 16)
-                    
-                    // Saved locations
-                    ForEach(locationManager.savedLocations) { location in
-                        CompactTimeCard(
-                            title: location.locationName,
-                            timeZone: location.timeZone,
-                            selectedDate: selectedDate,
-                            isUserLocation: false,
-                            onDelete: {
-                                // Delete with animation
-                                withAnimation {
-                                    locationManager.removeLocation(location)
-                                }
-                            }
-                        )
-                        .padding(.horizontal, 16)
-                    }
-                }
-                .padding(.vertical, 12)
-            }
-            .scrollDisabled(false)
-            
-            Divider()
-            
-            // Share button at the bottom
-            Button(action: {
-                shareSchedule()
-            }) {
-                HStack {
-                    Image(systemName: "square.and.arrow.up")
-                    Text("Share Schedule")
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .padding()
-        }
-        .persistentSystemOverlays(.hidden)
+    @StateObject private var meetingStorage = MeetingStorage()
+    @State private var currentMeetingID: UUID? = nil  // Tracks the currently-open meeting for auto-save
+
+    var selectedDate: Date {
+        get { Date(timeIntervalSince1970: selectedDateTimestamp) }
+        nonmutating set { selectedDateTimestamp = newValue.timeIntervalSince1970 }
     }
     
+    var selectedLocationID: UUID? {
+        selectedLocationIDString.isEmpty ? nil : UUID(uuidString: selectedLocationIDString)
+    }
+    
+    var selectedTimeZone: TimeZone {
+        if let selectedID = selectedLocationID,
+           let location = locationManager.savedLocations.first(where: { $0.id == selectedID }) {
+            return location.timeZone
+        }
+        return locationManager.userTimeZone
+    }
+    
+    var selectedLocationName: String {
+        if let selectedID = selectedLocationID,
+           let location = locationManager.savedLocations.first(where: { $0.id == selectedID }) {
+            return location.locationName
+        }
+        return "Your Location"
+    }
+    
+    // Computed property to get sorted locations with selected one at top
+    var sortedLocations: [SavedLocation] {
+        guard let selectedID = selectedLocationID else {
+            // No location selected - sort all by time zone offset
+            return locationManager.savedLocations.sorted { location1, location2 in
+                let offset1 = location1.timeZone.secondsFromGMT(for: selectedDate)
+                let offset2 = location2.timeZone.secondsFromGMT(for: selectedDate)
+                return offset1 < offset2
+            }
+        }
+        
+        var sorted = locationManager.savedLocations
+        // Remove selected location
+        if let selectedIndex = sorted.firstIndex(where: { $0.id == selectedID }) {
+            let selectedLocation = sorted.remove(at: selectedIndex)
+            
+            // Sort remaining locations by time zone offset
+            sorted.sort { location1, location2 in
+                let offset1 = location1.timeZone.secondsFromGMT(for: selectedDate)
+                let offset2 = location2.timeZone.secondsFromGMT(for: selectedDate)
+                return offset1 < offset2
+            }
+            
+            // Insert selected location at the top
+            sorted.insert(selectedLocation, at: 0)
+        }
+        return sorted
+    }
+    
+    @State private var showingClearConfirmation = false
+    @State private var showingMeetingNamePrompt = false
+    @State private var meetingName = ""
+    @State private var showingSaveMeetingPrompt = false
+    @State private var showingOpenMeeting = false
+    @State private var savedScheduleText = ""
+    
+    var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                // Header with meeting name, nav buttons
+                VStack(spacing: 0) {
+                    HStack {
+                        Button(action: onBack) {
+                            HStack {
+                                Image(systemName: "chevron.left")
+                                Text("Map")
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer()
+
+                        // Save As New button — always available to save a copy
+                        Button(action: {
+                            meetingName = ""
+                            showingMeetingNamePrompt = true
+                        }) {
+                            Text("Save As")
+                                .font(.body)
+                        }
+                        .buttonStyle(.plain)
+
+                        // Open button
+                        Button(action: {
+                            showingOpenMeeting = true
+                        }) {
+                            Text("Open")
+                                .font(.body)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(meetingStorage.savedMeetings.isEmpty)
+                        .opacity(meetingStorage.savedMeetings.isEmpty ? 0.3 : 1.0)
+
+                        // Clear button
+                        Button(action: {
+                            showingClearConfirmation = true
+                        }) {
+                            Text("Clear")
+                                .font(.body)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
+                        .opacity(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty ? 0.3 : 1.0)
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+                    .padding(.bottom, currentMeetingID != nil ? 4 : 12)
+
+                    // Active meeting name indicator
+                    if currentMeetingID != nil && !meetingName.isEmpty {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                            Text(meetingName)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                            Text("· auto-saving")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                    }
+                }
+                .background(.ultraThinMaterial)
+                
+                // Interactive Calendar and Time Scrubber
+                DraggableCalendarView(
+                    selectedDate: Binding(
+                        get: { self.selectedDate },
+                        set: { self.selectedDate = $0 }
+                    ),
+                    timeZone: selectedTimeZone
+                )
+                
+                Divider()
+                
+                // Scrollable list of locations
+                ScrollViewReader { scrollProxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(spacing: 12) {
+                            // User's location - shown first if selected, otherwise after selected saved location
+                            if selectedLocationID == nil {
+                                CompactTimeCard(
+                                    title: "Your Location",
+                                    timeZone: locationManager.userTimeZone,
+                                    selectedDate: selectedDate,
+                                    isUserLocation: true,
+                                    isSelected: true,
+                                    isLocked: false,
+                                    locationId: nil,
+                                    onDelete: nil,
+                                    onTap: {
+                                        selectedLocationIDString = ""
+                                    },
+                                    onToggleLock: nil
+                                )
+                                .padding(.horizontal, 16)
+                                .id("your-location-selected")
+                            }
+                            
+                            // All saved locations in sorted order
+                            ForEach(sortedLocations) { location in
+                                CompactTimeCard(
+                                    title: location.locationName,
+                                    timeZone: location.timeZone,
+                                    selectedDate: selectedDate,
+                                    isUserLocation: false,
+                                    isSelected: selectedLocationID == location.id,
+                                    isLocked: location.isLocked,
+                                    locationId: location.id,
+                                    onDelete: {
+                                        // If deleting the selected location, reset to user location
+                                        if selectedLocationID == location.id {
+                                            selectedLocationIDString = ""
+                                        }
+                                        // Delete with animation
+                                        withAnimation {
+                                            locationManager.removeLocation(location)
+                                        }
+                                    },
+                                    onTap: {
+                                        selectedLocationIDString = location.id.uuidString
+                                    },
+                                    onToggleLock: {
+                                        locationManager.toggleLock(for: location.id)
+                                    }
+                                )
+                                .padding(.horizontal, 16)
+                                .id(location.id)
+                            }
+                            
+                            // User's location - shown after saved locations when not selected
+                            if selectedLocationID != nil {
+                                CompactTimeCard(
+                                    title: "Your Location",
+                                    timeZone: locationManager.userTimeZone,
+                                    selectedDate: selectedDate,
+                                    isUserLocation: true,
+                                    isSelected: false,
+                                    isLocked: false,
+                                    locationId: nil,
+                                    onDelete: nil,
+                                    onTap: {
+                                        selectedLocationIDString = ""
+                                    },
+                                    onToggleLock: nil
+                                )
+                                .padding(.horizontal, 16)
+                                .id("your-location-unselected")
+                            }
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.bottom, 80) // Add padding at bottom so content isn't hidden behind share button
+                        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: selectedLocationID)
+                    }
+                    .onChange(of: selectedLocationID) { _, _ in
+                        // Scroll to top when selection changes
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            scrollProxy.scrollTo("list-top", anchor: .top)
+                        }
+                    }
+                }
+                .scrollDisabled(false)
+                .onAppear {
+                    // Validate that the selected location still exists
+                    if let selectedID = selectedLocationID {
+                        let locationExists = locationManager.savedLocations.contains { $0.id == selectedID }
+                        if !locationExists {
+                            // Reset to user location if saved location was deleted
+                            selectedLocationIDString = ""
+                        }
+                    }
+                }
+            }
+            
+            // Share button floating at bottom right
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        showingSaveMeetingPrompt = true
+                    }) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 20))
+                            .foregroundColor(.primary)
+                            .padding(16)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
+                    }
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 20)
+                }
+            }
+        }
+        .persistentSystemOverlays(.hidden)
+        .alert("Save Meeting As", isPresented: $showingMeetingNamePrompt) {
+            TextField("Enter meeting name", text: $meetingName)
+                .textInputAutocapitalization(.words)
+            Button("Cancel", role: .cancel) {
+                // Restore the previous meeting name if we cancelled
+                if let id = currentMeetingID,
+                   let existing = meetingStorage.savedMeetings.first(where: { $0.id == id }) {
+                    meetingName = existing.name
+                }
+            }
+            Button("Save") {
+                saveMeetingAsNew()
+            }
+            .disabled(meetingName.isEmpty)
+        } message: {
+            Text("Enter a name for this new meeting.")
+        }
+        .alert("Share Schedule", isPresented: $showingSaveMeetingPrompt) {
+            TextField("Enter meeting name", text: $meetingName)
+                .textInputAutocapitalization(.words)
+            Button("Cancel", role: .cancel) {
+                meetingName = ""
+            }
+            Button("Share") {
+                shareSchedule()
+                meetingName = ""
+            }
+            .disabled(meetingName.isEmpty)
+        } message: {
+            Text("Enter a name for this meeting to share the schedule.")
+        }
+        .sheet(isPresented: $showingOpenMeeting) {
+            OpenMeetingView(meetingStorage: meetingStorage, currentMeetingID: currentMeetingID, onSelectMeeting: { meeting in
+                loadMeeting(meeting)
+            })
+        }
+        .alert("Clear All Locations", isPresented: $showingClearConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clear All", role: .destructive) {
+                // Dissociate from the active meeting (stop auto-saving)
+                currentMeetingID = nil
+                meetingName = ""
+
+                // Clear only unlocked saved locations
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    locationManager.savedLocations.removeAll { !$0.isLocked }
+                }
+
+                // Reset to user location and current date/time
+                selectedLocationIDString = ""
+                selectedDate = Date()
+            }
+        } message: {
+            let lockedCount = locationManager.savedLocations.filter { $0.isLocked }.count
+            if lockedCount > 0 {
+                return Text("This will remove all unlocked locations and reset to your current local date and time. \(lockedCount) locked location\(lockedCount == 1 ? "" : "s") will remain.")
+            } else {
+                return Text("This will remove all saved locations and reset to your current local date and time.")
+            }
+        }
+        // MARK: - Auto-save triggers
+        .onChange(of: locationManager.savedLocations) { _, _ in
+            autoSaveCurrentMeeting()
+        }
+        .onChange(of: selectedDateTimestamp) { _, _ in
+            autoSaveCurrentMeeting()
+        }
+        .onChange(of: selectedLocationIDString) { _, _ in
+            autoSaveCurrentMeeting()
+        }
+    }
+
     func shareSchedule() {
         // Create a formatted text schedule
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         
-        var scheduleText = "World Times Schedule\n"
-        scheduleText += "Selected: \(formatter.string(from: selectedDate))\n\n"
+        var scheduleText = ""
         
-        // Add user location
-        formatter.timeZone = locationManager.userTimeZone
-        scheduleText += "Your Location:\n"
-        scheduleText += "\(formatter.string(from: selectedDate))\n"
-        scheduleText += "\(locationManager.userTimeZone.identifier)\n\n"
+        // Add meeting name at the top
+        if !meetingName.isEmpty {
+            scheduleText += "\(meetingName)\n"
+            scheduleText += String(repeating: "=", count: meetingName.count) + "\n\n"
+        }
+        
+        // Add meeting location and time at the top
+        formatter.timeZone = selectedTimeZone
+        scheduleText += "Meeting time zone: \(selectedTimeZone.identifier.replacingOccurrences(of: "_", with: " "))\n"
+        scheduleText += "Meeting time: \(formatter.string(from: selectedDate)) (local time)\n\n"
+        
+        scheduleText += "World Times Schedule\n\n"
+        
+        // Check if meeting location is the user's location
+        let isMeetingAtUserLocation = selectedTimeZone.identifier == locationManager.userTimeZone.identifier
+        
+        // Add user location only if it's different from meeting location
+        if !isMeetingAtUserLocation {
+            formatter.timeZone = locationManager.userTimeZone
+            scheduleText += "Your Location:\n"
+            scheduleText += "\(formatter.string(from: selectedDate))\n"
+            scheduleText += "\(locationManager.userTimeZone.identifier)\n\n"
+        }
         
         // Add saved locations
         for location in locationManager.savedLocations {
@@ -1063,19 +1339,200 @@ struct TimesListView: View {
             
             rootVC.present(activityController, animated: true)
         }
+        
+        // After sharing, ask if they want to save
+        savedScheduleText = scheduleText
+        showingSaveMeetingPrompt = true
+    }
+    
+    func saveMeetingAsNew() {
+        let meeting = SavedMeeting(
+            name: meetingName,
+            locations: locationManager.savedLocations,
+            selectedLocationID: selectedLocationIDString,
+            dateTimestamp: selectedDateTimestamp
+        )
+        meetingStorage.saveMeeting(meeting)
+        // Start tracking this new meeting for auto-save
+        currentMeetingID = meeting.id
+    }
+
+    /// Auto-save current state back to the active meeting (silent, no prompts)
+    func autoSaveCurrentMeeting() {
+        guard let id = currentMeetingID else { return }
+        // Only auto-save if the meeting still exists in storage
+        guard meetingStorage.savedMeetings.contains(where: { $0.id == id }) else {
+            currentMeetingID = nil
+            return
+        }
+        let meeting = SavedMeeting(
+            id: id,
+            name: meetingName,
+            locations: locationManager.savedLocations,
+            selectedLocationID: selectedLocationIDString,
+            dateTimestamp: selectedDateTimestamp
+        )
+        meetingStorage.saveMeeting(meeting)
+    }
+
+    func loadMeeting(_ meeting: SavedMeeting) {
+        // Track which meeting we're editing
+        currentMeetingID = meeting.id
+
+        // Restore the locations
+        locationManager.savedLocations = meeting.locations
+
+        // Restore the selected location
+        if !meeting.selectedLocationID.isEmpty {
+            if let selectedUUID = UUID(uuidString: meeting.selectedLocationID),
+               meeting.locations.contains(where: { $0.id == selectedUUID }) {
+                selectedLocationIDString = meeting.selectedLocationID
+            } else {
+                selectedLocationIDString = ""
+            }
+        } else {
+            selectedLocationIDString = ""
+        }
+
+        // Restore the date
+        selectedDate = Date(timeIntervalSince1970: meeting.dateTimestamp)
+
+        // Restore the meeting name
+        meetingName = meeting.name
+    }
+}
+
+// MARK: - Open Meeting View
+struct OpenMeetingView: View {
+    @ObservedObject var meetingStorage: MeetingStorage
+    let currentMeetingID: UUID?
+    let onSelectMeeting: (SavedMeeting) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var sortedMeetings: [SavedMeeting] {
+        meetingStorage.savedMeetings.sorted { $0.modifiedAt > $1.modifiedAt }
+    }
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if meetingStorage.savedMeetings.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "calendar.badge.plus")
+                            .font(.system(size: 48))
+                            .foregroundColor(.secondary)
+                        Text("No Saved Meetings")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Text("Save a meeting first using the Save As button.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                } else {
+                    List {
+                        ForEach(sortedMeetings) { meeting in
+                            Button(action: {
+                                onSelectMeeting(meeting)
+                                dismiss()
+                            }) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack(spacing: 6) {
+                                            Text(meeting.name)
+                                                .font(.headline)
+                                            if meeting.id == currentMeetingID {
+                                                Text("Active")
+                                                    .font(.caption2)
+                                                    .fontWeight(.medium)
+                                                    .foregroundColor(.green)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.green.opacity(0.15))
+                                                    .cornerRadius(4)
+                                            }
+                                        }
+
+                                        HStack(spacing: 12) {
+                                            // Meeting date
+                                            Label {
+                                                Text(Date(timeIntervalSince1970: meeting.dateTimestamp), style: .date)
+                                                    .font(.caption)
+                                            } icon: {
+                                                Image(systemName: "calendar")
+                                                    .font(.caption2)
+                                            }
+                                            .foregroundColor(.secondary)
+
+                                            // Location count
+                                            Label {
+                                                Text("\(meeting.locations.count) location\(meeting.locations.count == 1 ? "" : "s")")
+                                                    .font(.caption)
+                                            } icon: {
+                                                Image(systemName: "mappin")
+                                                    .font(.caption2)
+                                            }
+                                            .foregroundColor(.secondary)
+                                        }
+
+                                        // Last modified
+                                        Text("Modified \(Date(timeIntervalSince1970: meeting.modifiedAt), style: .relative) ago")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary.opacity(0.7))
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                        .onDelete { indexSet in
+                            let meetings = sortedMeetings
+                            for index in indexSet {
+                                meetingStorage.deleteMeeting(meetings[index])
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Open Meeting")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                if !meetingStorage.savedMeetings.isEmpty {
+                    ToolbarItem(placement: .primaryAction) {
+                        EditButton()
+                    }
+                }
+            }
+        }
     }
 }
 
 // MARK: - Draggable Calendar View
 struct DraggableCalendarView: View {
     @Binding var selectedDate: Date
+    let timeZone: TimeZone
     @State private var dragOffset: CGFloat = 0
     @State private var currentMonth: Date = Date()
     @GestureState private var isDragging = false
     @State private var lastHapticMinute: Int = -1
     @State private var slideDirection: SlideDirection = .none
     
-    private let calendar = Calendar.current
+    private var calendar: Calendar {
+        var cal = Calendar.current
+        cal.timeZone = timeZone
+        return cal
+    }
     private let daysInWeek = 7
     private let hapticFeedback = UIImpactFeedbackGenerator(style: .light)
     
@@ -1086,6 +1543,12 @@ struct DraggableCalendarView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
+                // Timezone indicator
+                Text("Meeting time zone: \(timeZone.identifier.replacingOccurrences(of: "_", with: " "))")
+                    .font(.caption)
+                    .foregroundColor(.pink)
+                    .padding(.top, 4)
+                
                 // Header with month/year (no chevrons)
                 HStack {
                     Spacer()
@@ -1187,25 +1650,25 @@ struct DraggableCalendarView: View {
                     // Background track
                     Capsule()
                         .fill(Color.gray.opacity(0.2))
-                        .frame(height: 6)
+                        .frame(height: 8)
                     
                     // Progress indicator
                     Capsule()
                         .fill(Color.accentColor)
-                        .frame(width: geometry.size.width * timeProgress, height: 6)
+                        .frame(width: geometry.size.width * CGFloat(timeProgress), height: 8)
                     
                     // Draggable handle
                     Circle()
                         .fill(Color.white)
-                        .frame(width: 24, height: 24)
-                        .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
+                        .frame(width: 20, height: 20)
+                        .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
                         .overlay(
                             Circle()
-                                .stroke(Color.accentColor, lineWidth: 2.5)
+                                .stroke(Color.accentColor, lineWidth: 2)
                         )
-                        .offset(x: (geometry.size.width * timeProgress) - 12)
+                        .offset(x: (geometry.size.width * CGFloat(timeProgress)) - 10)
                 }
-                .frame(height: 36)
+                .frame(height: 20)
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
@@ -1213,9 +1676,9 @@ struct DraggableCalendarView: View {
                         }
                 )
             }
-            .frame(height: 36)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+            .frame(height: 20)
+            .padding(.horizontal, 40)
+            .padding(.vertical, 12)
         }
         .background(Color.white)
         .onAppear {
@@ -1225,6 +1688,7 @@ struct DraggableCalendarView: View {
     
     private var monthYearString: String {
         let formatter = DateFormatter()
+        formatter.timeZone = timeZone
         formatter.dateFormat = "MMMM yyyy"
         return formatter.string(from: currentMonth)
     }
@@ -1364,7 +1828,12 @@ struct CompactTimeCard: View {
     let timeZone: TimeZone
     let selectedDate: Date
     let isUserLocation: Bool
+    let isSelected: Bool
+    let isLocked: Bool
+    let locationId: UUID?
     let onDelete: (() -> Void)?
+    let onTap: () -> Void
+    let onToggleLock: (() -> Void)?
     
     // Random stub image selection
     let stubImages = ["stub-dawn", "stub-night", "stub-midmorning", "stub-midday", "stub-midafternoon", "stub-earlyevening"]
@@ -1378,11 +1847,12 @@ struct CompactTimeCard: View {
     @State private var isSwiping = false
     @State private var isThresholdReached = false
     @State private var showingDeleteConfirmation = false
-    
+    @State private var cardWidth: CGFloat = 350
+
     var body: some View {
         ZStack(alignment: .trailing) {
-            // Red background with trash icon - only for deletable rows
-            if !isUserLocation {
+            // Red background with trash icon - only shown when actively swiping
+            if !isUserLocation && offset < 0 {
                 HStack {
                     Spacer()
                     Image(systemName: "trash.fill")
@@ -1398,6 +1868,24 @@ struct CompactTimeCard: View {
 
             // Main card content
             HStack(alignment: .center, spacing: 16) {
+                // Lock icon - show for all locations
+                if isUserLocation {
+                    // Your Location - always locked, not tappable
+                    Image(systemName: "lock.fill")
+                        .foregroundColor(.orange)
+                        .font(.system(size: 16))
+                        .frame(width: 20)
+                } else if let onToggleLock = onToggleLock {
+                    // Saved locations - tappable lock toggle
+                    Button(action: onToggleLock) {
+                        Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
+                            .foregroundColor(isLocked ? .orange : .gray.opacity(0.3))
+                            .font(.system(size: 16))
+                            .frame(width: 20)
+                    }
+                    .buttonStyle(.plain)
+                }
+                
                 // Location name and time difference - flexible, can truncate
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -1415,22 +1903,43 @@ struct CompactTimeCard: View {
 
                 Spacer(minLength: 8)
 
-                // Time only - fixed size to prevent wrapping
-                Text(formattedTime())
-                    .font(.system(.title3, design: .rounded))
-                    .fontWeight(.bold)
-                    .monospacedDigit()
-                    .fixedSize(horizontal: true, vertical: false)
+                // Time and date - fixed size to prevent wrapping
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(formattedTime())
+                        .font(.system(.title3, design: .rounded))
+                        .fontWeight(.bold)
+                        .monospacedDigit()
+                        .fixedSize(horizontal: true, vertical: false)
+                    
+                    Text(formattedDate())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isUserLocation ? Color.blue.opacity(0.12) : Color(uiColor: .secondarySystemBackground))
+            .background(
+                isSelected ? Color(red: 1.0, green: 0.9, blue: 0.95) :
+                isUserLocation ? Color.blue.opacity(0.1) :
+                Color(uiColor: .secondarySystemBackground)
+            )
             .cornerRadius(12)
             .offset(x: offset)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                // Trigger haptic feedback
+                let selectionFeedback = UISelectionFeedbackGenerator()
+                selectionFeedback.selectionChanged()
+                onTap()
+            }
             .gesture(isUserLocation ? nil :
                 DragGesture(minimumDistance: 20)
                     .onChanged { gesture in
+                        // Don't allow swiping locked items
+                        guard !isLocked else { return }
+                        
                         let translation = gesture.translation
                         let horizontalMovement = abs(translation.width)
                         let verticalMovement = abs(translation.height)
@@ -1443,7 +1952,6 @@ struct CompactTimeCard: View {
                                 offset = translation.width
 
                                 // Check if pulse threshold is reached (35% for pulsing)
-                                let cardWidth = UIScreen.main.bounds.width - 32
                                 let pulseThreshold = -cardWidth * 0.35
 
                                 if offset < pulseThreshold {
@@ -1462,13 +1970,15 @@ struct CompactTimeCard: View {
                         }
                     }
                     .onEnded { gesture in
+                        // Don't allow swiping locked items
+                        guard !isLocked else { return }
+                        
                         let translation = gesture.translation
                         let horizontalMovement = abs(translation.width)
                         let verticalMovement = abs(translation.height)
 
                         // Only process if it was primarily horizontal (3x ratio + 30pt minimum)
                         if horizontalMovement > verticalMovement * 3 && horizontalMovement > 30 {
-                            let cardWidth = UIScreen.main.bounds.width - 32
                             let deleteThreshold = -cardWidth * 0.40
 
                             if offset < deleteThreshold {
@@ -1498,6 +2008,17 @@ struct CompactTimeCard: View {
         }
         .cornerRadius(12)
         .clipped()
+        .background(
+            GeometryReader { geo in
+                Color.clear.onAppear { cardWidth = geo.size.width }
+            }
+        )
+        .onAppear {
+            // Reset swipe state when card appears (fixes stuck red row after loading meetings)
+            offset = 0
+            isThresholdReached = false
+            isSwiping = false
+        }
         .alert("Delete Location", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -1520,6 +2041,14 @@ struct CompactTimeCard: View {
         formatter.timeZone = timeZone
         formatter.timeStyle = .short
         formatter.dateStyle = .none
+        return formatter.string(from: selectedDate)
+    }
+    
+    func formattedDate() -> String {
+        let formatter = DateFormatter()
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
         return formatter.string(from: selectedDate)
     }
     
@@ -1640,58 +2169,6 @@ struct TimeConversionCard: View {
         }
     }
 }
-
-// MARK: - Old Time Location Card (for reference, can be removed)
-struct TimeLocationCard: View {
-    let title: String
-    let timeZone: TimeZone
-    let currentTime: Date
-    let isUserLocation: Bool
-    let onDelete: (() -> Void)?
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                
-                Text(timeZone.identifier)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                Text(formattedTime())
-                    .font(.system(.largeTitle, design: .rounded))
-                    .fontWeight(.bold)
-                    .monospacedDigit()
-            }
-            
-            Spacer()
-            
-            if let onDelete = onDelete {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .foregroundColor(.red)
-                        .imageScale(.large)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity)
-        .background(isUserLocation ? Color.blue.opacity(0.1) : Color(uiColor: .secondarySystemBackground))
-        .cornerRadius(16)
-    }
-    
-    private func formattedTime() -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timeZone
-        formatter.timeStyle = .medium
-        formatter.dateStyle = .none
-        return formatter.string(from: currentTime)
-    }
-}
-
 
 // MARK: - Helper for Dynamic Shape
 struct AnyShape: Shape {

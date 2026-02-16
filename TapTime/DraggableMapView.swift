@@ -14,12 +14,14 @@ class DraggableAnnotation: NSObject, MKAnnotation {
     let id: UUID
     let title: String?
     let subtitle: String?
+    let isLocked: Bool
     
-    init(id: UUID, coordinate: CLLocationCoordinate2D, title: String?, subtitle: String?) {
+    init(id: UUID, coordinate: CLLocationCoordinate2D, title: String?, subtitle: String?, isLocked: Bool) {
         self.id = id
         self.coordinate = coordinate
         self.title = title
         self.subtitle = subtitle
+        self.isLocked = isLocked
         super.init()
     }
 }
@@ -100,13 +102,28 @@ struct DraggableMapView: UIViewRepresentable {
                        existingAnnotation.coordinate.longitude != location.coordinate.longitude {
                         existingAnnotation.coordinate = location.coordinate
                     }
+                    // If lock status changed, we need to recreate the annotation view
+                    if existingAnnotation.isLocked != location.isLocked {
+                        mapView.removeAnnotation(existingAnnotation)
+                        currentAnnotations.removeValue(forKey: location.id)
+                        let newAnnotation = DraggableAnnotation(
+                            id: location.id,
+                            coordinate: location.coordinate,
+                            title: location.locationName,
+                            subtitle: location.timeZone.identifier,
+                            isLocked: location.isLocked
+                        )
+                        currentAnnotations[location.id] = newAnnotation
+                        mapView.addAnnotation(newAnnotation)
+                    }
                 } else {
                     // Create new annotation
                     let annotation = DraggableAnnotation(
                         id: location.id,
                         coordinate: location.coordinate,
                         title: location.locationName,
-                        subtitle: location.timeZone.identifier
+                        subtitle: location.timeZone.identifier,
+                        isLocked: location.isLocked
                     )
                     currentAnnotations[location.id] = annotation
                     mapView.addAnnotation(annotation)
@@ -142,7 +159,7 @@ struct DraggableMapView: UIViewRepresentable {
                 return nil
             }
             
-            guard annotation is DraggableAnnotation else {
+            guard let draggableAnnotation = annotation as? DraggableAnnotation else {
                 return nil
             }
             
@@ -158,9 +175,19 @@ struct DraggableMapView: UIViewRepresentable {
                 annotationView?.annotation = annotation
             }
             
-            // Simple red dot
-            annotationView?.markerTintColor = .red
-            annotationView?.glyphImage = nil
+            // Color based on lock status: green if locked, red if unlocked
+            annotationView?.markerTintColor = draggableAnnotation.isLocked ? .systemGreen : .systemRed
+            
+            // Add lock icon for locked locations
+            if draggableAnnotation.isLocked {
+                // Create a lock icon for locked pins
+                let lockConfig = UIImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+                annotationView?.glyphImage = UIImage(systemName: "lock.fill", withConfiguration: lockConfig)
+                annotationView?.glyphTintColor = .white
+            } else {
+                annotationView?.glyphImage = nil
+            }
+            
             annotationView?.displayPriority = .required // Keep size consistent
             
             return annotationView
