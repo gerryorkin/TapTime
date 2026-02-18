@@ -29,6 +29,7 @@ class DraggableAnnotation: NSObject, MKAnnotation {
 struct DraggableMapView: UIViewRepresentable {
     @ObservedObject var locationManager: LocationManager
     @Binding var cameraPosition: MKCoordinateRegion
+    @Binding var isMapScrolling: Bool
     let onTap: (CLLocationCoordinate2D) -> Void
     let showTimezoneLines: Bool
     let showCountryLabels: Bool
@@ -38,11 +39,21 @@ struct DraggableMapView: UIViewRepresentable {
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
         mapView.showsCompass = false
-        
+
         // Add tap gesture
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         mapView.addGestureRecognizer(tapGesture)
-        
+
+        // Add pan gesture to track user scrolling
+        let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        panGesture.delegate = context.coordinator
+        mapView.addGestureRecognizer(panGesture)
+
+        // Add pinch gesture to track user zooming
+        let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        pinchGesture.delegate = context.coordinator
+        mapView.addGestureRecognizer(pinchGesture)
+
         return mapView
     }
     
@@ -70,14 +81,59 @@ struct DraggableMapView: UIViewRepresentable {
         Coordinator(self)
     }
     
-    class Coordinator: NSObject, MKMapViewDelegate {
+    class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: DraggableMapView
         private var currentAnnotations: [UUID: DraggableAnnotation] = [:]
         private var timezoneOverlays: [MKPolyline] = []
         var shouldUpdateBinding = true
-        
+        private var scrollEndTask: Task<Void, Never>?
+
         init(_ parent: DraggableMapView) {
             self.parent = parent
+        }
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            switch gesture.state {
+            case .began:
+                scrollEndTask?.cancel()
+                parent.isMapScrolling = true
+            case .ended, .cancelled:
+                scheduleScrollEnd()
+            default:
+                break
+            }
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            switch gesture.state {
+            case .began:
+                scrollEndTask?.cancel()
+                parent.isMapScrolling = true
+            case .ended, .cancelled:
+                scheduleScrollEnd()
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
+        }
+
+        private func scheduleScrollEnd() {
+            scrollEndTask?.cancel()
+            scrollEndTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(800))
+                guard !Task.isCancelled else { return }
+                parent.isMapScrolling = false
+            }
+        }
+
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            // Also schedule scroll end here to catch momentum scrolling
+            if parent.isMapScrolling {
+                scheduleScrollEnd()
+            }
         }
         
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {

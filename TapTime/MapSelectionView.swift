@@ -40,6 +40,7 @@ struct MapSelectionView: View {
     @State private var showingHelp = false
     @FocusState private var isSearchFieldFocused: Bool
     @AppStorage("useLargePills") private var useLargePills = false
+    @State private var isMapScrolling = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -47,6 +48,7 @@ struct MapSelectionView: View {
             DraggableMapView(
                 locationManager: locationManager,
                 cameraPosition: $mapRegion,
+                isMapScrolling: $isMapScrolling,
                 onTap: { coordinate in
                     Task {
                         let result = await locationManager.addLocation(at: coordinate)
@@ -112,16 +114,31 @@ struct MapSelectionView: View {
             }
             .ignoresSafeArea()
 
-            // Buttons at top left — pill style matching location cards
+            // Buttons at bottom left — pill style matching location cards
+            if !showingSearchField {
             VStack {
+                Spacer()
                 HStack {
                     VStack(spacing: -4) {
                         LeftPillButton(
-                            icon: "questionmark.circle.fill",
-                            label: "Help",
+                            icon: "xmark.circle.fill",
+                            label: "Clear",
                             isLarge: useLargePills,
-                            action: { showingHelp = true }
+                            action: { showingClearConfirmation = true }
                         )
+                        .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
+                        .opacity(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty ? 0.5 : 1.0)
+
+                        LeftPillButton(
+                            icon: "magnifyingglass",
+                            label: "Search",
+                            isLarge: useLargePills,
+                            action: {
+                                showingSearchField = true
+                                isSearchFieldFocused = true
+                            }
+                        )
+                        .padding(.top, 12)
 
                         LeftPillButton(
                             icon: "gearshape.fill",
@@ -129,25 +146,25 @@ struct MapSelectionView: View {
                             isLarge: useLargePills,
                             action: { showingSettings = true }
                         )
-                        .padding(.top, useLargePills ? 0 : 12)
+                        .padding(.top, 12)
 
                         LeftPillButton(
-                            icon: "xmark.circle.fill",
-                            label: "Clear",
+                            icon: "questionmark.circle.fill",
+                            label: "Help",
                             isLarge: useLargePills,
-                            action: { showingClearConfirmation = true }
+                            action: { showingHelp = true }
                         )
-                        .padding(.top, useLargePills ? 0 : 12)
-                        .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
-                        .opacity(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty ? 0.5 : 1.0)
+                        .padding(.top, 12)
                     }
                     .frame(width: 200)
 
                     Spacer()
                 }
-                .padding(.top)
-
-                Spacer()
+                .padding(.bottom, 40)
+            }
+            .ignoresSafeArea(.keyboard)
+            .opacity(isMapScrolling ? 0 : 1)
+            .animation(.easeInOut(duration: 0.3), value: isMapScrolling)
             }
 
             // Location pills at the top right
@@ -155,7 +172,7 @@ struct MapSelectionView: View {
                 HStack {
                     Spacer()
 
-                    VStack(spacing: -4) {
+                    VStack(spacing: 8) {
                         ForEach(locationManager.savedLocations) { location in
                             FloatingLocationCard(
                                 location: location,
@@ -195,7 +212,7 @@ struct MapSelectionView: View {
                                 .background(Color.white)
                                 .foregroundColor(.black)
                                 .clipShape(useLargePills ? AnyShape(RoundedRectangle(cornerRadius: 16)) : AnyShape(Capsule()))
-                                .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                                 .offset(x: collapsedOffset)
                                 .onTapGesture {
                                     onDone()
@@ -217,28 +234,8 @@ struct MapSelectionView: View {
 
                 Spacer()
             }
-
-            // Search button floating on the map (bottom left)
-            if !showingSearchField {
-                VStack {
-                    Spacer()
-                    HStack {
-                        LeftPillButton(
-                            icon: "magnifyingglass",
-                            label: "Search",
-                            isLarge: useLargePills,
-                            action: {
-                                showingSearchField = true
-                                isSearchFieldFocused = true
-                            }
-                        )
-                        .frame(width: 200)
-                        Spacer()
-                    }
-                    .padding(.bottom, 40)
-                }
-                .ignoresSafeArea(.keyboard)
-            }
+            .opacity(isMapScrolling ? 0 : 1)
+            .animation(.easeInOut(duration: 0.3), value: isMapScrolling)
 
             // Search bar sitting just above the keyboard
             if showingSearchField {

@@ -74,6 +74,7 @@ struct TimesListView: View {
         return sorted
     }
 
+    @State private var showingCalendar = false
     @State private var showingClearConfirmation = false
     @State private var showingMeetingNamePrompt = false
     @AppStorage("meetingName") private var meetingName = ""
@@ -113,10 +114,8 @@ struct TimesListView: View {
                         Menu {
                             Button(action: {
                                 if currentMeetingID != nil {
-                                    // Already tracking a meeting — just save in place
                                     autoSaveCurrentMeeting()
                                 } else {
-                                    // No active meeting — prompt for a name
                                     meetingName = ""
                                     showingMeetingNamePrompt = true
                                 }
@@ -148,37 +147,22 @@ struct TimesListView: View {
                     .padding(.horizontal)
                     .padding(.top, 12)
                     .padding(.bottom, 12)
-
-//                    // Active meeting name indicator
-//                    if currentMeetingID != nil && !meetingName.isEmpty {
-//                        HStack(spacing: 6) {
-//                            Image(systemName: "doc.fill")
-//                                .font(.system(size: 11))
-//                                .foregroundColor(.secondary)
-//                            Text(meetingName)
-//                                .font(.subheadline)
-//                                .foregroundColor(.secondary)
-//                                .lineLimit(1)
-//                            Text("· auto-saving")
-//                                .font(.caption2)
-//                                .foregroundColor(.green)
-//                        }
-//                        .padding(.horizontal)
-//                        .padding(.bottom, 8)
-//                    }
                 }
                 .background(.ultraThinMaterial)
 
-                // Interactive Calendar and Time Scrubber
-                DraggableCalendarView(
-                    selectedDate: Binding(
-                        get: { self.selectedDate },
-                        set: { self.selectedDate = $0 }
-                    ),
-                    timeZone: selectedTimeZone
-                )
+                // Calendar (hidden by default, toggled by button)
+                if showingCalendar {
+                    DraggableCalendarView(
+                        selectedDate: Binding(
+                            get: { self.selectedDate },
+                            set: { self.selectedDate = $0 }
+                        ),
+                        timeZone: selectedTimeZone
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
 
-                Divider()
+                    Divider()
+                }
 
                 // Scrollable list of locations
                 ScrollViewReader { scrollProxy in
@@ -215,11 +199,9 @@ struct TimesListView: View {
                                     isLocked: location.isLocked,
                                     locationId: location.id,
                                     onDelete: {
-                                        // If deleting the selected location, reset to user location
                                         if selectedLocationID == location.id {
                                             selectedLocationIDString = ""
                                         }
-                                        // Delete with animation
                                         withAnimation {
                                             locationManager.removeLocation(location)
                                         }
@@ -256,11 +238,9 @@ struct TimesListView: View {
                             }
                         }
                         .padding(.vertical, 12)
-                        .padding(.bottom, 80) // Add padding at bottom so content isn't hidden behind share button
                         .animation(.spring(response: 0.5, dampingFraction: 0.8), value: selectedLocationID)
                     }
                     .onChange(of: selectedLocationID) { _, _ in
-                        // Scroll to top when selection changes
                         withAnimation(.easeInOut(duration: 0.3)) {
                             scrollProxy.scrollTo("list-top", anchor: .top)
                         }
@@ -268,36 +248,52 @@ struct TimesListView: View {
                 }
                 .scrollDisabled(false)
                 .onAppear {
-                    // Validate that the selected location still exists
                     if let selectedID = selectedLocationID {
                         let locationExists = locationManager.savedLocations.contains { $0.id == selectedID }
                         if !locationExists {
-                            // Reset to user location if saved location was deleted
                             selectedLocationIDString = ""
                         }
                     }
                 }
-            }
 
-            // Share button floating at bottom right
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
+                Divider()
+
+                // Bottom bar: calendar toggle, time scrubber, share button
+                HStack(spacing: 12) {
+                    // Calendar toggle button
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            showingCalendar.toggle()
+                        }
+                    }) {
+                        Image(systemName: showingCalendar ? "calendar" : "calendar")
+                            .font(.system(size: 32))
+                            .foregroundColor(.primary)
+                    }
+                    .buttonStyle(.plain)
+
+                    // Time scrubber
+                    TimeScrubberView(
+                        selectedDate: Binding(
+                            get: { self.selectedDate },
+                            set: { self.selectedDate = $0 }
+                        ),
+                        timeZone: selectedTimeZone
+                    )
+
+                    // Share button
                     Button(action: {
                         showingSaveMeetingPrompt = true
                     }) {
                         Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 20))
+                            .font(.system(size: 32))
                             .foregroundColor(.primary)
-                            .padding(16)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Circle())
-                            .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
                     }
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 20)
+                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+                .background(Color.white)
             }
         }
         .persistentSystemOverlays(.hidden)

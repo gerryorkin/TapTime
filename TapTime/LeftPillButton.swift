@@ -26,13 +26,11 @@ struct LeftPillButton: View {
             .padding(.horizontal, isLarge ? 20 : 16)
             .padding(.vertical, isLarge ? 10 : 6)
             .frame(width: cardWidth)
-            .background(
-                Color.white.opacity(0.5)
-                    .background(.ultraThinMaterial)
-            )
-            .foregroundColor(.black)
+            .background(Color.black)
+            .foregroundColor(.white)
             .clipShape(isLarge ? AnyShape(RoundedRectangle(cornerRadius: 16)) : AnyShape(Capsule()))
             .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+            .opacity(0.8)
             .offset(x: collapsedOffset)
             .onTapGesture {
                 action()

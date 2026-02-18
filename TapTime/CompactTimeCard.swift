@@ -70,24 +70,29 @@ struct CompactTimeCard: View {
                     .buttonStyle(.plain)
                 }
 
-                // Location name and time difference - flexible, can truncate
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
-
-                    if !isUserLocation {
-                        Text(timeDifference())
-                            .font(.caption)
-                            .foregroundColor(.blue)
+                // Location name - split on "/" into two lines
+                VStack(alignment: .leading, spacing: 1) {
+                    let parts = title.split(separator: "/", maxSplits: 1)
+                    if parts.count > 1 {
+                        Text(parts[0].replacingOccurrences(of: "_", with: " "))
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                        Text(parts[1].replacingOccurrences(of: "_", with: " "))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                    } else {
+                        Text(title.replacingOccurrences(of: "_", with: " "))
+                            .font(.headline)
+                            .fontWeight(.semibold)
                             .lineLimit(1)
                     }
                 }
 
                 Spacer(minLength: 8)
 
-                // Time and date - fixed size to prevent wrapping
+                // Time, date, and hours difference - fixed size to prevent wrapping
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(formattedTime())
                         .font(.system(.title3, design: .rounded))
@@ -99,6 +104,13 @@ struct CompactTimeCard: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: true, vertical: false)
+
+                    if !isUserLocation {
+                        Text(timeDifference())
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
                 }
             }
             .padding(.horizontal, 16)

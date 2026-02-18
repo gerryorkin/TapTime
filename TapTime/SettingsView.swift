@@ -11,6 +11,10 @@ struct SettingsView: View {
     @Binding var useLargePills: Bool
     @Environment(\.dismiss) private var dismiss
 
+    // Pill appearance properties kept for future use
+    @AppStorage("pillOpacity") private var pillOpacity: Double = 0.9
+    @AppStorage("pillColorData") private var pillColorData: Data = defaultPillColorData
+
     var body: some View {
         NavigationView {
             Form {

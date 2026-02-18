@@ -18,7 +18,7 @@ struct FloatingLocationCard: View {
     @State private var dragOffset: CGFloat = 0
     @State private var isExpanded = false  // Start collapsed (55% visible)
     @GestureState private var isDragging = false
-    @State private var backgroundOpacity: Double = 1.0  // Start white, fade to transparent
+    @State private var cardOpacity: Double = 0.5  // Start at 50%, fade up to 75%
     @State private var showColon = true  // For flashing colon
 
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -79,25 +79,10 @@ struct FloatingLocationCard: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                     .frame(width: cardWidth)
-                    .background(
-                        ZStack {
-                            // When expanded, show white background
-                            // When collapsed, fade to more transparent material
-                            if isExpanded {
-                                Color.white
-                            } else {
-                                if backgroundOpacity > 0 {
-                                    Color.white.opacity(backgroundOpacity)
-                                }
-                                if backgroundOpacity < 1.0 {
-                                    Color.white.opacity(0.5)
-                                        .background(.ultraThinMaterial)
-                                }
-                            }
-                        }
-                    )
+                    .foregroundColor(.black)
+                    .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                 } else {
                     // Small pills: Single-line layout
                     HStack(spacing: 12) {
@@ -143,25 +128,10 @@ struct FloatingLocationCard: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
                     .frame(width: cardWidth)
-                    .background(
-                        ZStack {
-                            // When expanded, show white background
-                            // When collapsed, fade to more transparent material
-                            if isExpanded {
-                                Color.white
-                            } else {
-                                if backgroundOpacity > 0 {
-                                    Color.white.opacity(backgroundOpacity)
-                                }
-                                if backgroundOpacity < 1.0 {
-                                    Color.white.opacity(0.5)
-                                        .background(.ultraThinMaterial)
-                                }
-                            }
-                        }
-                    )
+                    .foregroundColor(.black)
+                    .background(Color.white)
                     .clipShape(Capsule())
-                    .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                 }
             }
             .onTapGesture {
@@ -234,12 +204,13 @@ struct FloatingLocationCard: View {
             )
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isExpanded)
         }
-        .frame(height: isLarge ? 60 : 44)
+        .frame(height: isLarge ? 44 : 32)
         .padding(.bottom, (isLarge && isExpanded) ? 20 : 0)  // Add space below when expanded
+        .opacity(cardOpacity)
         .onAppear {
-            // When card appears, fade from white to transparent over 4 seconds
-            withAnimation(.easeOut(duration: 4.0).delay(1.0)) {
-                backgroundOpacity = 0.0
+            // Fade from 50% to 75% opacity when sliding in
+            withAnimation(.easeOut(duration: 0.6)) {
+                cardOpacity = 0.75
             }
         }
         .onReceive(timer) { _ in
