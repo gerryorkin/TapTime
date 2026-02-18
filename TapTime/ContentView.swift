@@ -22,6 +22,9 @@ struct ContentView: View {
                     if !locationManager.savedLocations.isEmpty {
                         showingTimesList = true
                     }
+                },
+                onShowTimes: {
+                    showingTimesList = true
                 }
             )
             .opacity(showingTimesList ? 0 : 1)
@@ -149,10 +152,67 @@ struct PulsingDot: View {
     }
 }
 
+// MARK: - Help View
+struct HelpView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Hosting a meeting and want to tell people in multiple locations what time it starts?")
+                        .font(.headline)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        helpStep(number: "1", text: "Tap to place a location marker for each person you are inviting to attend. Just tap the country they live in on the map, or use the search feature. You don't need to do that for you and your location, unless you are currently in a time zone that is different from where you'll be when the meeting happens.")
+
+                        helpStep(number: "2", text: "Tap the Choose Date and Time button.")
+
+                        helpStep(number: "3", text: "Tap on the calendar to choose the day your meeting will occur, in your local time.")
+
+                        helpStep(number: "4", text: "Drag the time setting control to set the time for your meeting.")
+
+                        helpStep(number: "5", text: "Done! You can share the list of dates and times with others by tapping the Share Schedule button.")
+
+                        helpStep(number: "6", text: "If you are using the app to help someone else work out times for their meeting, make sure you have added their location on the map. Then, before you set the date and time the meeting will occur, tap on their location in the list on the calendar screen.")
+
+                        helpStep(number: "7", text: "You can save meeting times, and open them next time you need to check the time you need to get online for that meeting. If you make changes (like changing the meeting time) they are automatically saved for you.")
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("How to Use")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func helpStep(number: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(number)
+                .font(.system(.body, design: .rounded))
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .frame(width: 28, height: 28)
+                .background(Color.accentColor)
+                .clipShape(Circle())
+
+            Text(text)
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 // MARK: - Map Selection Screen
 struct MapSelectionView: View {
     @ObservedObject var locationManager: LocationManager
     let onDone: () -> Void
+    var onShowTimes: (() -> Void)? = nil
     
     @AppStorage("mapCenterLatitude") private var mapCenterLatitude: Double = 20.0
     @AppStorage("mapCenterLongitude") private var mapCenterLongitude: Double = 0.0
@@ -177,6 +237,7 @@ struct MapSelectionView: View {
     @State private var showingClearConfirmation = false
     @State private var showingOceanAlert = false
     @State private var showingDuplicateAlert = false
+    @State private var showingHelp = false
     @FocusState private var isSearchFieldFocused: Bool
     @AppStorage("useLargePills") private var useLargePills = false
 
@@ -251,35 +312,36 @@ struct MapSelectionView: View {
             }
             .ignoresSafeArea()
 
-            // Settings and Clear buttons at top left
+            // Buttons at top left — pill style matching location cards
             VStack {
                 HStack {
-                    HStack(spacing: 10) {
-                        Button(action: {
-                            showingSettings = true
-                        }) {
-                            Image(systemName: "gearshape.fill")
-                                .font(.system(size: 16))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Circle())
-                        }
+                    VStack(spacing: -4) {
+                        LeftPillButton(
+                            icon: "questionmark.circle.fill",
+                            label: "Help",
+                            isLarge: useLargePills,
+                            action: { showingHelp = true }
+                        )
 
-                        Button(action: {
-                            showingClearConfirmation = true
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 16))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Circle())
-                        }
+                        LeftPillButton(
+                            icon: "gearshape.fill",
+                            label: "Settings",
+                            isLarge: useLargePills,
+                            action: { showingSettings = true }
+                        )
+                        .padding(.top, useLargePills ? 0 : 12)
+
+                        LeftPillButton(
+                            icon: "xmark.circle.fill",
+                            label: "Clear",
+                            isLarge: useLargePills,
+                            action: { showingClearConfirmation = true }
+                        )
+                        .padding(.top, useLargePills ? 0 : 12)
                         .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
                         .opacity(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty ? 0.5 : 1.0)
                     }
-                    .padding(.leading)
+                    .frame(width: 200)
 
                     Spacer()
                 }
@@ -320,7 +382,7 @@ struct MapSelectionView: View {
                                 let collapsedOffset = cardWidth * 0.45  // 45% off-screen (55% visible), matching pills
 
                                 HStack(spacing: 6) {
-                                    Text("Done")
+                                    Text("Choose Date and Time")
                                         .font(.system(size: useLargePills ? 16 : 15))
                                         .fontWeight(.semibold)
                                     Image(systemName: "chevron.right")
@@ -350,7 +412,7 @@ struct MapSelectionView: View {
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: locationManager.savedLocations.map { $0.id })
                     .frame(width: 350)
                 }
-                .padding(.top, 60)
+                .padding(.top)
                 .padding(.trailing)
 
                 Spacer()
@@ -361,20 +423,18 @@ struct MapSelectionView: View {
                 VStack {
                     Spacer()
                     HStack {
-                        Button(action: {
-                            showingSearchField = true
-                            isSearchFieldFocused = true
-                        }) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 16))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Circle())
-                        }
+                        LeftPillButton(
+                            icon: "magnifyingglass",
+                            label: "Search",
+                            isLarge: useLargePills,
+                            action: {
+                                showingSearchField = true
+                                isSearchFieldFocused = true
+                            }
+                        )
+                        .frame(width: 200)
                         Spacer()
                     }
-                    .padding(.horizontal)
                     .padding(.bottom, 40)
                 }
                 .ignoresSafeArea(.keyboard)
@@ -578,6 +638,9 @@ struct MapSelectionView: View {
         } message: {
             Text("That timezone is already in your list.")
         }
+        .sheet(isPresented: $showingHelp) {
+            HelpView()
+        }
     }
     
     private func saveMapPosition() {
@@ -666,6 +729,42 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Left Pill Button (matches location card style)
+struct LeftPillButton: View {
+    let icon: String
+    let label: String
+    let isLarge: Bool
+    let action: () -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            let cardWidth = geometry.size.width
+            let collapsedOffset = -(cardWidth * 0.70)  // 70% off-screen to the left (30% visible)
+
+            HStack {
+                Spacer()
+                Image(systemName: icon)
+                    .font(.system(size: isLarge ? 16 : 14))
+            }
+            .padding(.horizontal, isLarge ? 20 : 16)
+            .padding(.vertical, isLarge ? 10 : 6)
+            .frame(width: cardWidth)
+            .background(
+                Color.white.opacity(0.5)
+                    .background(.ultraThinMaterial)
+            )
+            .foregroundColor(.black)
+            .clipShape(isLarge ? AnyShape(RoundedRectangle(cornerRadius: 16)) : AnyShape(Capsule()))
+            .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+            .offset(x: collapsedOffset)
+            .onTapGesture {
+                action()
+            }
+        }
+        .frame(height: isLarge ? 44 : 32)
     }
 }
 
@@ -928,7 +1027,10 @@ struct TimesListView: View {
     @AppStorage("selectedLocationID") private var selectedLocationIDString: String = ""
     
     @StateObject private var meetingStorage = MeetingStorage()
-    @State private var currentMeetingID: UUID? = nil  // Tracks the currently-open meeting for auto-save
+    @AppStorage("currentMeetingID") private var currentMeetingIDString: String = ""
+    private var currentMeetingID: UUID? {
+        currentMeetingIDString.isEmpty ? nil : UUID(uuidString: currentMeetingIDString)
+    }
 
     var selectedDate: Date {
         get { Date(timeIntervalSince1970: selectedDateTimestamp) }
@@ -986,10 +1088,12 @@ struct TimesListView: View {
     
     @State private var showingClearConfirmation = false
     @State private var showingMeetingNamePrompt = false
-    @State private var meetingName = ""
+    @AppStorage("meetingName") private var meetingName = ""
     @State private var showingSaveMeetingPrompt = false
     @State private var showingOpenMeeting = false
     @State private var savedScheduleText = ""
+    @State private var isLoadingMeeting = false  // Guard to suppress auto-save during loadMeeting()
+    @State private var autoSaveTask: Task<Void, Never>?  // Debounce timer for auto-save
     
     var body: some View {
         ZStack {
@@ -1007,59 +1111,73 @@ struct TimesListView: View {
 
                         Spacer()
 
-                        // Save As New button — always available to save a copy
-                        Button(action: {
-                            meetingName = ""
-                            showingMeetingNamePrompt = true
-                        }) {
-                            Text("Save As")
-                                .font(.body)
-                        }
-                        .buttonStyle(.plain)
-
-                        // Open button
-                        Button(action: {
-                            showingOpenMeeting = true
-                        }) {
-                            Text("Open")
-                                .font(.body)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(meetingStorage.savedMeetings.isEmpty)
-                        .opacity(meetingStorage.savedMeetings.isEmpty ? 0.3 : 1.0)
-
-                        // Clear button
-                        Button(action: {
-                            showingClearConfirmation = true
-                        }) {
-                            Text("Clear")
-                                .font(.body)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
-                        .opacity(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty ? 0.3 : 1.0)
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 12)
-                    .padding(.bottom, currentMeetingID != nil ? 4 : 12)
-
-                    // Active meeting name indicator
-                    if currentMeetingID != nil && !meetingName.isEmpty {
-                        HStack(spacing: 6) {
-                            Image(systemName: "doc.fill")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                        // Active meeting name
+                        if currentMeetingID != nil && !meetingName.isEmpty {
                             Text(meetingName)
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
-                            Text("· auto-saving")
-                                .font(.caption2)
-                                .foregroundColor(.green)
                         }
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
+
+                        Spacer()
+
+                        // Meeting menu (Save, Open, Clear)
+                        Menu {
+                            Button(action: {
+                                if currentMeetingID != nil {
+                                    // Already tracking a meeting — just save in place
+                                    autoSaveCurrentMeeting()
+                                } else {
+                                    // No active meeting — prompt for a name
+                                    meetingName = ""
+                                    showingMeetingNamePrompt = true
+                                }
+                            }) {
+                                Label("Save", systemImage: "square.and.arrow.down")
+                            }
+
+                            Button(action: {
+                                showingOpenMeeting = true
+                            }) {
+                                Label("Open", systemImage: "folder")
+                            }
+                            .disabled(meetingStorage.savedMeetings.isEmpty)
+
+                            Divider()
+
+                            Button(role: .destructive, action: {
+                                showingClearConfirmation = true
+                            }) {
+                                Label("Clear All", systemImage: "trash")
+                            }
+                            .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
+                        } label: {
+                            Text("Menu")
+                                .font(.body)
+                        }
+                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+                    .padding(.bottom, 12)
+
+//                    // Active meeting name indicator
+//                    if currentMeetingID != nil && !meetingName.isEmpty {
+//                        HStack(spacing: 6) {
+//                            Image(systemName: "doc.fill")
+//                                .font(.system(size: 11))
+//                                .foregroundColor(.secondary)
+//                            Text(meetingName)
+//                                .font(.subheadline)
+//                                .foregroundColor(.secondary)
+//                                .lineLimit(1)
+//                            Text("· auto-saving")
+//                                .font(.caption2)
+//                                .foregroundColor(.green)
+//                        }
+//                        .padding(.horizontal)
+//                        .padding(.bottom, 8)
+//                    }
                 }
                 .background(.ultraThinMaterial)
                 
@@ -1195,22 +1313,18 @@ struct TimesListView: View {
             }
         }
         .persistentSystemOverlays(.hidden)
-        .alert("Save Meeting As", isPresented: $showingMeetingNamePrompt) {
+        .alert("Save Meeting", isPresented: $showingMeetingNamePrompt) {
             TextField("Enter meeting name", text: $meetingName)
                 .textInputAutocapitalization(.words)
             Button("Cancel", role: .cancel) {
-                // Restore the previous meeting name if we cancelled
-                if let id = currentMeetingID,
-                   let existing = meetingStorage.savedMeetings.first(where: { $0.id == id }) {
-                    meetingName = existing.name
-                }
+                meetingName = ""
             }
             Button("Save") {
-                saveMeetingAsNew()
+                saveMeeting()
             }
             .disabled(meetingName.isEmpty)
         } message: {
-            Text("Enter a name for this new meeting.")
+            Text("Enter a name for this meeting.")
         }
         .alert("Share Schedule", isPresented: $showingSaveMeetingPrompt) {
             TextField("Enter meeting name", text: $meetingName)
@@ -1235,7 +1349,7 @@ struct TimesListView: View {
             Button("Cancel", role: .cancel) { }
             Button("Clear All", role: .destructive) {
                 // Dissociate from the active meeting (stop auto-saving)
-                currentMeetingID = nil
+                currentMeetingIDString = ""
                 meetingName = ""
 
                 // Clear only unlocked saved locations
@@ -1255,15 +1369,15 @@ struct TimesListView: View {
                 return Text("This will remove all saved locations and reset to your current local date and time.")
             }
         }
-        // MARK: - Auto-save triggers
+        // MARK: - Auto-save triggers (debounced, guarded)
         .onChange(of: locationManager.savedLocations) { _, _ in
-            autoSaveCurrentMeeting()
+            scheduleAutoSave()
         }
         .onChange(of: selectedDateTimestamp) { _, _ in
-            autoSaveCurrentMeeting()
+            scheduleAutoSave()
         }
         .onChange(of: selectedLocationIDString) { _, _ in
-            autoSaveCurrentMeeting()
+            scheduleAutoSave()
         }
     }
 
@@ -1345,7 +1459,7 @@ struct TimesListView: View {
         showingSaveMeetingPrompt = true
     }
     
-    func saveMeetingAsNew() {
+    func saveMeeting() {
         let meeting = SavedMeeting(
             name: meetingName,
             locations: locationManager.savedLocations,
@@ -1354,15 +1468,27 @@ struct TimesListView: View {
         )
         meetingStorage.saveMeeting(meeting)
         // Start tracking this new meeting for auto-save
-        currentMeetingID = meeting.id
+        currentMeetingIDString = meeting.id.uuidString
+    }
+
+    /// Debounce auto-save: coalesces rapid changes (e.g. loadMeeting setting 3 properties) into one save
+    func scheduleAutoSave() {
+        guard !isLoadingMeeting else { return }  // Don't auto-save while restoring a meeting
+        autoSaveTask?.cancel()
+        autoSaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            autoSaveCurrentMeeting()
+        }
     }
 
     /// Auto-save current state back to the active meeting (silent, no prompts)
     func autoSaveCurrentMeeting() {
+        guard !isLoadingMeeting else { return }
         guard let id = currentMeetingID else { return }
         // Only auto-save if the meeting still exists in storage
         guard meetingStorage.savedMeetings.contains(where: { $0.id == id }) else {
-            currentMeetingID = nil
+            currentMeetingIDString = ""
             return
         }
         let meeting = SavedMeeting(
@@ -1376,11 +1502,14 @@ struct TimesListView: View {
     }
 
     func loadMeeting(_ meeting: SavedMeeting) {
-        // Track which meeting we're editing
-        currentMeetingID = meeting.id
+        // Suppress auto-save while restoring state (prevents recursive save loop)
+        isLoadingMeeting = true
 
-        // Restore the locations
-        locationManager.savedLocations = meeting.locations
+        // Track which meeting we're editing
+        currentMeetingIDString = meeting.id.uuidString
+
+        // Restore the locations (sorted by timezone offset)
+        locationManager.setLocationsSorted(meeting.locations)
 
         // Restore the selected location
         if !meeting.selectedLocationID.isEmpty {
@@ -1399,6 +1528,9 @@ struct TimesListView: View {
 
         // Restore the meeting name
         meetingName = meeting.name
+
+        // Re-enable auto-save after state is fully restored
+        isLoadingMeeting = false
     }
 }
 
@@ -1424,7 +1556,7 @@ struct OpenMeetingView: View {
                         Text("No Saved Meetings")
                             .font(.headline)
                             .foregroundColor(.secondary)
-                        Text("Save a meeting first using the Save As button.")
+                        Text("Save a meeting first using the Save option in the menu.")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -1617,15 +1749,20 @@ struct DraggableCalendarView: View {
                 .id(monthYearString) // Force re-render when month changes
             }
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 15)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 30)
                     .onEnded { value in
+                        // Only handle primarily horizontal swipes (ignore vertical scrolling)
+                        let horizontalDistance = abs(value.translation.width)
+                        let verticalDistance = abs(value.translation.height)
+                        guard horizontalDistance > verticalDistance * 1.5 else { return }
+
                         let threshold: CGFloat = 30
                         let velocity = (value.predictedEndTranslation.width - value.translation.width) / 10
-                        
+
                         // Consider both distance and velocity for more responsive swiping
                         let effectiveSwipe = value.translation.width + velocity
-                        
+
                         if effectiveSwipe > threshold {
                             // Swipe right - previous month (only if not in current month)
                             if !isCurrentMonth {
@@ -1934,7 +2071,7 @@ struct CompactTimeCard: View {
                 selectionFeedback.selectionChanged()
                 onTap()
             }
-            .gesture(isUserLocation ? nil :
+            .simultaneousGesture(isUserLocation ? nil :
                 DragGesture(minimumDistance: 20)
                     .onChanged { gesture in
                         // Don't allow swiping locked items

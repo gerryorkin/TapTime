@@ -223,14 +223,13 @@ class LocationManager: NSObject, ObservableObject {
     @Published var userTimeZone: TimeZone = .current
     @Published var savedLocations: [SavedLocation] = [] {
         didSet {
-            // Re-sort by time of day whenever locations change (but avoid infinite loop)
-            let sorted = locationsSortedByTime(savedLocations)
-            if sorted.map(\.id) != savedLocations.map(\.id) {
-                savedLocations = sorted
-                return // The re-assignment will trigger didSet again with the sorted version
-            }
             saveLocations()
         }
+    }
+
+    /// Set locations with automatic sorting. Use this instead of assigning savedLocations directly.
+    func setLocationsSorted(_ locations: [SavedLocation]) {
+        savedLocations = locationsSortedByTime(locations)
     }
     
     private let locationManager = CLLocationManager()
@@ -281,13 +280,21 @@ class LocationManager: NSObject, ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: savedLocationsKey) else {
             return
         }
-        
+
         do {
             let decoder = JSONDecoder()
-            savedLocations = try decoder.decode([SavedLocation].self, from: data)
+            let decoded = try decoder.decode([SavedLocation].self, from: data)
+            savedLocations = locationsSortedByTime(decoded)
         } catch {
             print("Failed to load locations: \(error.localizedDescription)")
         }
+    }
+
+    /// Append a location and re-sort by timezone offset
+    private func appendAndSort(_ location: SavedLocation) {
+        var updated = savedLocations
+        updated.append(location)
+        savedLocations = locationsSortedByTime(updated)
     }
     
     /// Result of attempting to add a location
@@ -367,7 +374,7 @@ class LocationManager: NSObject, ObservableObject {
                 locationName: name
             )
 
-            savedLocations.append(savedLocation)
+            appendAndSort(savedLocation)
             print("✅ Added location: \(name)")
             return .success
         } catch {
@@ -486,7 +493,7 @@ class LocationManager: NSObject, ObservableObject {
                             timeZone: resolvedTZ,
                             locationName: friendlyName
                         )
-                        savedLocations.append(savedLocation)
+                        appendAndSort(savedLocation)
                         print("✅ Added location: \(searchResult.name) (\(resolvedTZ.identifier))")
                         return (coordinate, .success)
                     }
@@ -506,7 +513,7 @@ class LocationManager: NSObject, ObservableObject {
             locationName: CountryData.friendlyName(for: searchResult.timeZone.identifier)
         )
 
-        savedLocations.append(savedLocation)
+        appendAndSort(savedLocation)
         print("✅ Added location: \(searchResult.name) (\(searchResult.timeZone.identifier))")
         return (coordinate, .success)
     }
@@ -562,7 +569,7 @@ class LocationManager: NSObject, ObservableObject {
                     locationName: name
                 )
 
-                savedLocations.append(savedLocation)
+                appendAndSort(savedLocation)
                 return (coordinate, .success)
             }
         } catch {
@@ -591,7 +598,7 @@ class LocationManager: NSObject, ObservableObject {
                     locationName: friendlyName
                 )
 
-                savedLocations.append(savedLocation)
+                appendAndSort(savedLocation)
                 return coordinate
             }
 
@@ -617,7 +624,7 @@ class LocationManager: NSObject, ObservableObject {
                         locationName: finalName
                     )
 
-                    savedLocations.append(savedLocation)
+                    appendAndSort(savedLocation)
                     return coordinate
                 }
             } catch {
@@ -634,7 +641,7 @@ class LocationManager: NSObject, ObservableObject {
             locationName: friendlyName
         )
 
-        savedLocations.append(savedLocation)
+        appendAndSort(savedLocation)
         return coordinate
     }
 
@@ -662,21 +669,22 @@ class LocationManager: NSObject, ObservableObject {
     }
     
     func updateLocationCoordinate(id: UUID, newCoordinate: CLLocationCoordinate2D) async {
-        guard let index = savedLocations.firstIndex(where: { $0.id == id }) else { return }
-        
-        // Update the coordinate
-        savedLocations[index].coordinate = newCoordinate
-        
-        // Optionally, reverse geocode the new location to update timezone and name
+        guard savedLocations.contains(where: { $0.id == id }) else { return }
+
+        // Reverse geocode the new location to update timezone and name
         let location = CLLocation(latitude: newCoordinate.latitude, longitude: newCoordinate.longitude)
         
         guard let request = MKReverseGeocodingRequest(location: location) else {
+            // Geocoding unavailable — just update the coordinate in place
+            if let index = savedLocations.firstIndex(where: { $0.id == id }) {
+                savedLocations[index].coordinate = newCoordinate
+            }
             return
         }
-        
+
         do {
             let mapItems = try await request.mapItems
-            
+
             if let firstItem = mapItems.first {
                 let timeZone = firstItem.timeZone ?? TimeZone.current
 
@@ -691,17 +699,28 @@ class LocationManager: NSObject, ObservableObject {
                     name = CountryData.friendlyName(for: timeZone.identifier)
                 }
 
-                // Update the existing location while preserving the ID
+                // Update the existing location while preserving the ID, then re-sort
                 if let index = savedLocations.firstIndex(where: { $0.id == id }) {
-                    savedLocations[index] = SavedLocation(
+                    var updated = savedLocations
+                    updated[index] = SavedLocation(
                         id: id, // Preserve the original ID
                         coordinate: newCoordinate,
                         timeZone: timeZone,
                         locationName: name
                     )
+                    savedLocations = locationsSortedByTime(updated)
+                }
+            } else {
+                // No map item — just update coordinate
+                if let index = savedLocations.firstIndex(where: { $0.id == id }) {
+                    savedLocations[index].coordinate = newCoordinate
                 }
             }
         } catch {
+            // Geocoding failed — just update coordinate
+            if let index = savedLocations.firstIndex(where: { $0.id == id }) {
+                savedLocations[index].coordinate = newCoordinate
+            }
             print("Failed to reverse geocode dragged location: \(error.localizedDescription)")
         }
     }
