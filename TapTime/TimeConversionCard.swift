@@ -14,6 +14,20 @@ struct TimeConversionCard: View {
     let isUserLocation: Bool
     let onDelete: (() -> Void)?
 
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .medium
+        formatter.dateStyle = .none
+        return formatter
+    }()
+
     var convertedDate: Date {
         // Convert the selected date from user's timezone to this timezone
         selectedDate
@@ -68,19 +82,13 @@ struct TimeConversionCard: View {
     }
 
     private func formattedDate() -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timeZone
-        formatter.dateStyle = .full
-        formatter.timeStyle = .none
-        return formatter.string(from: selectedDate)
+        Self.dateFormatter.timeZone = timeZone
+        return Self.dateFormatter.string(from: selectedDate)
     }
 
     private func formattedTime() -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timeZone
-        formatter.timeStyle = .medium
-        formatter.dateStyle = .none
-        return formatter.string(from: selectedDate)
+        Self.timeFormatter.timeZone = timeZone
+        return Self.timeFormatter.string(from: selectedDate)
     }
 
     private func timeDifference() -> String {

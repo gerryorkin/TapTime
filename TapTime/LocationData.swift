@@ -14,6 +14,13 @@ struct SavedLocation: Identifiable, Equatable, Codable {
     var timeZone: TimeZone // Changed to var to allow updates
     var locationName: String // Changed to var to allow updates
     var isLocked: Bool // Whether this location is protected from clearing
+
+    private static let displayNameFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
     
     // Default initializer that generates a new ID
     init(id: UUID = UUID(), coordinate: CLLocationCoordinate2D, timeZone: TimeZone, locationName: String, isLocked: Bool = false) {
@@ -26,14 +33,9 @@ struct SavedLocation: Identifiable, Equatable, Codable {
     
     // Computed property that always shows current time
     var displayName: String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timeZone
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        
-        let currentTime = formatter.string(from: Date())
+        Self.displayNameFormatter.timeZone = timeZone
+        let currentTime = Self.displayNameFormatter.string(from: Date())
         let timeZoneAbbreviation = timeZone.abbreviation() ?? timeZone.identifier
-        
         return "\(timeZoneAbbreviation) • \(currentTime)"
     }
     

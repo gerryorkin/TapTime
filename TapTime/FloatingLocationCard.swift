@@ -20,8 +20,15 @@ struct FloatingLocationCard: View {
     @GestureState private var isDragging = false
     @State private var cardOpacity: Double = 0.5  // Start at 50%, fade up to 75%
     @State private var showColon = true  // For flashing colon
-
-    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @State private var timerCancellable: AnyCancellable?
+    
+    // Reusable date formatter to avoid repeated allocations
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
 
     var body: some View {
         GeometryReader { geometry in
@@ -43,8 +50,8 @@ struct FloatingLocationCard: View {
                         .buttonStyle(.plain)
 
                         VStack(alignment: .leading, spacing: 4) {
-                            // Line 1: Location name
-                            Text(location.locationName)
+                            // Line 1: Location name (always show country/city)
+                            Text(location.locationName.replacingOccurrences(of: "_", with: " "))
                                 .font(.system(size: 16))
                                 .fontWeight(.semibold)
                                 .lineLimit(1)
@@ -95,7 +102,7 @@ struct FloatingLocationCard: View {
                         }
                         .buttonStyle(.plain)
 
-                        Text(location.locationName)
+                        Text(location.locationName.replacingOccurrences(of: "_", with: " "))
                             .font(.system(size: 15))
                             .fontWeight(.semibold)
                             .lineLimit(1)
@@ -212,18 +219,31 @@ struct FloatingLocationCard: View {
             withAnimation(.easeOut(duration: 0.6)) {
                 cardOpacity = 0.75
             }
+            // Start timer only when visible
+            startTimer()
         }
-        .onReceive(timer) { _ in
-            currentTime = Date()
-            showColon.toggle()  // Toggle colon visibility every second
+        .onDisappear {
+            // Cancel timer when view disappears
+            stopTimer()
         }
+    }
+    
+    private func startTimer() {
+        timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in
+                currentTime = Date()
+                showColon.toggle()
+            }
+    }
+    
+    private func stopTimer() {
+        timerCancellable?.cancel()
+        timerCancellable = nil
     }
 
     private func formattedTime() -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = location.timeZone
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return formatter.string(from: currentTime)
+        Self.timeFormatter.timeZone = location.timeZone
+        return Self.timeFormatter.string(from: currentTime)
     }
 }

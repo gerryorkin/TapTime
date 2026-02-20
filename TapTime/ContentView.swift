@@ -12,23 +12,7 @@ struct ContentView: View {
     @AppStorage("showingTimesList") private var showingTimesList = false
 
     var body: some View {
-        ZStack {
-            // Keep MapSelectionView always in memory to prevent redrawing
-            MapSelectionView(
-                locationManager: locationManager,
-                onDone: {
-                    if !locationManager.savedLocations.isEmpty {
-                        showingTimesList = true
-                    }
-                },
-                onShowTimes: {
-                    showingTimesList = true
-                }
-            )
-            .opacity(showingTimesList ? 0 : 1)
-            .allowsHitTesting(!showingTimesList)
-
-            // Show TimesListView on top when needed
+        Group {
             if showingTimesList {
                 TimesListView(
                     locationManager: locationManager,
@@ -36,10 +20,29 @@ struct ContentView: View {
                         showingTimesList = false
                     }
                 )
-                .transition(.move(edge: .trailing))
+                .transition(.identity)
+            } else {
+                MapSelectionView(
+                    locationManager: locationManager,
+                    onDone: {
+                        if !locationManager.savedLocations.isEmpty {
+                            showingTimesList = true
+                        }
+                    },
+                    onShowTimes: {
+                        showingTimesList = true
+                    }
+                )
+                .transition(.identity)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: showingTimesList)
+        .animation(nil, value: showingTimesList)
+        .onAppear {
+            MapTileCache.prewarm(locations: locationManager.savedLocations.map(\.coordinate))
+        }
+        .onChange(of: locationManager.savedLocations) { _, newLocations in
+            MapTileCache.prewarm(locations: newLocations.map(\.coordinate))
+        }
     }
 }
 

@@ -19,11 +19,11 @@ struct SettingsView: View {
         NavigationView {
             Form {
                 Section {
-                    Toggle("Use Larger Pills", isOn: $useLargePills)
+                    Toggle("Use Larger Buttons", isOn: $useLargePills)
                 } header: {
                     Text("Display Options")
                 } footer: {
-                    Text("Show location cards with larger text and increased padding")
+                    Text("Show location buttons with larger text and increased padding")
                 }
 
                 Section {

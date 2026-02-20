@@ -18,6 +18,21 @@ struct CompactTimeCard: View {
     let onDelete: (() -> Void)?
     let onTap: () -> Void
     let onToggleLock: (() -> Void)?
+    
+    // Reusable date formatters to reduce allocations
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
+    
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
 
     // Random stub image selection
     let stubImages = ["stub-dawn", "stub-night", "stub-midmorning", "stub-midday", "stub-midafternoon", "stub-earlyevening"]
@@ -70,24 +85,27 @@ struct CompactTimeCard: View {
                     .buttonStyle(.plain)
                 }
 
-                // Location name - split on "/" into two lines
+                // Location name - country on first line, city on second line
                 VStack(alignment: .leading, spacing: 1) {
                     let parts = title.split(separator: "/", maxSplits: 1)
+                    // First line: always just the country
+                    Text((parts.first.map(String.init) ?? title).replacingOccurrences(of: "_", with: " "))
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                    // Second line: always show city if available
                     if parts.count > 1 {
-                        Text(parts[0].replacingOccurrences(of: "_", with: " "))
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .lineLimit(1)
                         Text(parts[1].replacingOccurrences(of: "_", with: " "))
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .lineLimit(1)
-                    } else {
-                        Text(title.replacingOccurrences(of: "_", with: " "))
-                            .font(.headline)
-                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
+                }
+
+                if isSelected {
+                    Text("⚓")
+                        .font(.system(size: 20))
                 }
 
                 Spacer(minLength: 8)
@@ -233,19 +251,13 @@ struct CompactTimeCard: View {
     }
 
     func formattedTime() -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timeZone
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return formatter.string(from: selectedDate)
+        Self.timeFormatter.timeZone = timeZone
+        return Self.timeFormatter.string(from: selectedDate)
     }
 
     func formattedDate() -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timeZone
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter.string(from: selectedDate)
+        Self.dateFormatter.timeZone = timeZone
+        return Self.dateFormatter.string(from: selectedDate)
     }
 
     func timeDifference() -> String {

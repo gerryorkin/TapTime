@@ -13,6 +13,12 @@ struct DraggableCalendarView: View {
     @State private var currentMonth: Date = Date()
     @State private var slideDirection: SlideDirection = .none
 
+    private static let monthYearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter
+    }()
+
     private var calendar: Calendar {
         var cal = Calendar.current
         cal.timeZone = timeZone
@@ -132,10 +138,8 @@ struct DraggableCalendarView: View {
     }
 
     private var monthYearString: String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: currentMonth)
+        Self.monthYearFormatter.timeZone = timeZone
+        return Self.monthYearFormatter.string(from: currentMonth)
     }
 
     private var isCurrentMonth: Bool {

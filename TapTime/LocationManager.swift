@@ -19,7 +19,7 @@ struct SearchResult: Identifiable {
 }
 
 // MARK: - Country & Capital City Data (not MainActor — loads instantly)
-enum CountryData {
+nonisolated enum CountryData {
     /// Maps lowercase country name → ISO code (e.g. "australia" → "AU")
     static let countryNameToCode: [String: String] = {
         var map: [String: String] = [:]
@@ -119,6 +119,39 @@ enum CountryData {
 
         // Fallback: return the raw identifier as-is
         return identifier
+    }
+
+    /// Returns true if the given country code has more than one distinct timezone
+    static func countryHasMultipleTimeZones(_ countryCode: String) -> Bool {
+        guard let identifiers = multiZoneCountries[countryCode.uppercased()] else {
+            return false
+        }
+        // Check distinct UTC offsets, not just identifier count
+        var seenOffsets = Set<Int>()
+        for id in identifiers {
+            if let tz = TimeZone(identifier: id) {
+                seenOffsets.insert(tz.secondsFromGMT())
+            }
+        }
+        return seenOffsets.count > 1
+    }
+
+    /// For pill display: show just the country if it has a single timezone,
+    /// or "Country/City" if the country spans multiple timezones.
+    /// Input is a locationName in "Country/City" format.
+    static func pillDisplayName(for locationName: String, timeZone: TimeZone) -> String {
+        let parts = locationName.split(separator: "/", maxSplits: 1)
+        guard parts.count == 2 else { return locationName }
+
+        let country = String(parts[0])
+
+        // Look up the country code from the timezone
+        if let countryCode = timeZoneToCountryCode[timeZone.identifier],
+           countryHasMultipleTimeZones(countryCode) {
+            return locationName  // Show full "Country/City"
+        }
+
+        return country  // Just the country name
     }
 
     static func timeZones(for countryCode: String) -> [TimeZone] {
@@ -234,6 +267,11 @@ class LocationManager: NSObject, ObservableObject {
     
     private let locationManager = CLLocationManager()
     private let savedLocationsKey = "savedLocations"
+    private var isAddingLocation = false
+    
+    // Cache to limit geocoding requests
+    private var geocodingCache: [String: (coordinate: CLLocationCoordinate2D, timeZone: TimeZone)] = [:]
+    private let maxCacheSize = 50
     
     override init() {
         super.init()
@@ -320,9 +358,36 @@ class LocationManager: NSObject, ObservableObject {
     }
 
     func addLocation(at coordinate: CLLocationCoordinate2D) async -> AddLocationResult {
+        guard !isAddingLocation else {
+            return .failed
+        }
         guard savedLocations.count < 10 else {
             buzzError()
             return .limitReached
+        }
+        isAddingLocation = true
+        defer { isAddingLocation = false }
+        
+        // Check cache first
+        let cacheKey = "\(coordinate.latitude),\(coordinate.longitude)"
+        if let cached = geocodingCache[cacheKey] {
+            let timeZone = cached.timeZone
+            if hasTimeZone(timeZone) {
+                buzzError()
+                return .duplicate
+            }
+            let city = timeZone.identifier.split(separator: "/").last
+                .map { String($0).replacingOccurrences(of: "_", with: " ") }
+                ?? timeZone.identifier
+            let name = CountryData.friendlyName(for: timeZone.identifier)
+            let savedLocation = SavedLocation(
+                coordinate: cached.coordinate,
+                timeZone: timeZone,
+                locationName: name
+            )
+            appendAndSort(savedLocation)
+            print("✅ Added location from cache: \(name)")
+            return .success
         }
 
         // Get timezone for the coordinate using MapKit reverse geocoding
@@ -367,6 +432,9 @@ class LocationManager: NSObject, ObservableObject {
             } else {
                 name = CountryData.friendlyName(for: timeZone.identifier)
             }
+            
+            // Cache the result
+            cacheGeocoding(key: cacheKey, coordinate: coordinate, timeZone: timeZone)
 
             let savedLocation = SavedLocation(
                 coordinate: coordinate,
@@ -649,6 +717,21 @@ class LocationManager: NSObject, ObservableObject {
         savedLocations.removeAll { $0.id == location.id }
     }
     
+    // MARK: - Cache Management
+    private func cacheGeocoding(key: String, coordinate: CLLocationCoordinate2D, timeZone: TimeZone) {
+        geocodingCache[key] = (coordinate, timeZone)
+        // Limit cache size to prevent unbounded growth
+        if geocodingCache.count > maxCacheSize {
+            // Remove oldest entries (simple strategy: remove first few)
+            let keysToRemove = Array(geocodingCache.keys.prefix(10))
+            keysToRemove.forEach { geocodingCache.removeValue(forKey: $0) }
+        }
+    }
+    
+    func clearCache() {
+        geocodingCache.removeAll()
+    }
+    
     func toggleLock(for locationId: UUID) {
         if let index = savedLocations.firstIndex(where: { $0.id == locationId }) {
             savedLocations[index].isLocked.toggle()
@@ -741,6 +824,10 @@ extension LocationManager: CLLocationManagerDelegate {
     
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("❌ Location manager failed with error: \(error.localizedDescription)")
+        // Stop trying to avoid repeated errors
+        Task { @MainActor in
+            locationManager.stopUpdatingLocation()
+        }
     }
     
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {

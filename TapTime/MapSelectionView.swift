@@ -40,7 +40,9 @@ struct MapSelectionView: View {
     @State private var showingHelp = false
     @FocusState private var isSearchFieldFocused: Bool
     @AppStorage("useLargePills") private var useLargePills = false
+    @AppStorage("hasShownFirstLaunchHelp") private var hasShownFirstLaunchHelp = false
     @State private var isMapScrolling = false
+    @State private var saveMapTask: Task<Void, Never>?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -101,16 +103,16 @@ struct MapSelectionView: View {
                 }
             }
             .onChange(of: mapRegion.center.latitude) { _, _ in
-                saveMapPosition()
+                scheduleSaveMapPosition()
             }
             .onChange(of: mapRegion.center.longitude) { _, _ in
-                saveMapPosition()
+                scheduleSaveMapPosition()
             }
             .onChange(of: mapRegion.span.latitudeDelta) { _, _ in
-                saveMapPosition()
+                scheduleSaveMapPosition()
             }
             .onChange(of: mapRegion.span.longitudeDelta) { _, _ in
-                saveMapPosition()
+                scheduleSaveMapPosition()
             }
             .ignoresSafeArea()
 
@@ -437,6 +439,21 @@ struct MapSelectionView: View {
         }
         .sheet(isPresented: $showingHelp) {
             HelpView()
+        }
+        .onAppear {
+            if !hasShownFirstLaunchHelp {
+                hasShownFirstLaunchHelp = true
+                showingHelp = true
+            }
+        }
+    }
+
+    private func scheduleSaveMapPosition() {
+        saveMapTask?.cancel()
+        saveMapTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            saveMapPosition()
         }
     }
 

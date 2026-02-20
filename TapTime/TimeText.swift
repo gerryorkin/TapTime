@@ -12,22 +12,42 @@ internal import Combine
 struct TimeText: View {
     let timeZone: TimeZone
     @State private var currentTime = Date()
-
-    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @State private var timerCancellable: AnyCancellable?
+    
+    // Reusable date formatter
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
 
     var body: some View {
         Text(formattedTime())
-            .onReceive(timer) { _ in
+            .onAppear {
+                startTimer()
+            }
+            .onDisappear {
+                stopTimer()
+            }
+    }
+    
+    private func startTimer() {
+        timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in
                 currentTime = Date()
             }
     }
+    
+    private func stopTimer() {
+        timerCancellable?.cancel()
+        timerCancellable = nil
+    }
 
     private func formattedTime() -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timeZone
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return formatter.string(from: currentTime)
+        Self.timeFormatter.timeZone = timeZone
+        return Self.timeFormatter.string(from: currentTime)
     }
 }
 

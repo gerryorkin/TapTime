@@ -42,7 +42,7 @@ struct TimesListView: View {
            let location = locationManager.savedLocations.first(where: { $0.id == selectedID }) {
             return location.locationName
         }
-        return "Your Location"
+        return "Your location"
     }
 
     // Computed property to get sorted locations with selected one at top
@@ -74,7 +74,7 @@ struct TimesListView: View {
         return sorted
     }
 
-    @State private var showingCalendar = false
+    @AppStorage("showingCalendar") private var showingCalendar = false
     @State private var showingClearConfirmation = false
     @State private var showingMeetingNamePrompt = false
     @AppStorage("meetingName") private var meetingName = ""
@@ -91,10 +91,8 @@ struct TimesListView: View {
                 VStack(spacing: 0) {
                     HStack {
                         Button(action: onBack) {
-                            HStack {
-                                Image(systemName: "chevron.left")
-                                Text("Map")
-                            }
+                            Image(systemName: "map")
+                                .font(.system(size: 32))
                         }
                         .buttonStyle(.plain)
 
@@ -139,8 +137,8 @@ struct TimesListView: View {
                             }
                             .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
                         } label: {
-                            Text("Menu")
-                                .font(.body)
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.system(size: 32))
                         }
                         .buttonStyle(.plain)
                     }
@@ -168,10 +166,14 @@ struct TimesListView: View {
                 ScrollViewReader { scrollProxy in
                     ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(spacing: 12) {
+                            Color.clear
+                                .frame(height: 0)
+                                .id("list-top")
+
                             // User's location - shown first if selected, otherwise after selected saved location
                             if selectedLocationID == nil {
                                 CompactTimeCard(
-                                    title: "Your Location",
+                                    title: "Your location",
                                     timeZone: locationManager.userTimeZone,
                                     selectedDate: selectedDate,
                                     isUserLocation: true,
@@ -181,6 +183,7 @@ struct TimesListView: View {
                                     onDelete: nil,
                                     onTap: {
                                         selectedLocationIDString = ""
+                                        selectedDate = Date()
                                     },
                                     onToggleLock: nil
                                 )
@@ -208,6 +211,7 @@ struct TimesListView: View {
                                     },
                                     onTap: {
                                         selectedLocationIDString = location.id.uuidString
+                                        selectedDate = Date()
                                     },
                                     onToggleLock: {
                                         locationManager.toggleLock(for: location.id)
@@ -220,7 +224,7 @@ struct TimesListView: View {
                             // User's location - shown after saved locations when not selected
                             if selectedLocationID != nil {
                                 CompactTimeCard(
-                                    title: "Your Location",
+                                    title: "Your location",
                                     timeZone: locationManager.userTimeZone,
                                     selectedDate: selectedDate,
                                     isUserLocation: true,
@@ -230,6 +234,7 @@ struct TimesListView: View {
                                     onDelete: nil,
                                     onTap: {
                                         selectedLocationIDString = ""
+                                        selectedDate = Date()
                                     },
                                     onToggleLock: nil
                                 )

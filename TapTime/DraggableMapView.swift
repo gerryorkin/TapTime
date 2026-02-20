@@ -39,6 +39,9 @@ struct DraggableMapView: UIViewRepresentable {
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
         mapView.showsCompass = false
+        
+        // Store weak reference for cleanup
+        context.coordinator.mapViewRef = mapView
 
         // Add tap gesture
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
@@ -57,11 +60,26 @@ struct DraggableMapView: UIViewRepresentable {
         return mapView
     }
     
+    static func dismantleUIView(_ mapView: MKMapView, coordinator: Coordinator) {
+        // Clean up map resources
+        mapView.removeAnnotations(mapView.annotations)
+        mapView.removeOverlays(mapView.overlays)
+        mapView.delegate = nil
+    }
+    
     func updateUIView(_ mapView: MKMapView, context: Context) {
+        // Never fight the user — skip programmatic region changes while the user is panning/flicking
+        guard !context.coordinator.userIsInteracting else {
+            // Still update annotations and overlays
+            context.coordinator.updateAnnotations(on: mapView, with: locationManager.savedLocations)
+            context.coordinator.updateTimezoneOverlays(on: mapView, show: showTimezoneLines)
+            return
+        }
+
         // Update region if needed, but only if it's a significant change to avoid feedback loops
         let currentRegion = mapView.region
         let threshold = 0.0001 // Minimum difference to trigger update
-        
+
         if abs(currentRegion.center.latitude - cameraPosition.center.latitude) > threshold ||
            abs(currentRegion.center.longitude - cameraPosition.center.longitude) > threshold ||
            abs(currentRegion.span.latitudeDelta - cameraPosition.span.latitudeDelta) > threshold ||
@@ -86,16 +104,29 @@ struct DraggableMapView: UIViewRepresentable {
         private var currentAnnotations: [UUID: DraggableAnnotation] = [:]
         private var timezoneOverlays: [MKPolyline] = []
         var shouldUpdateBinding = true
+        /// True while the user is interacting (pan/pinch/flick momentum). Blocks updateUIView from calling setRegion.
+        var userIsInteracting = false
         private var scrollEndTask: Task<Void, Never>?
+        private var regionUpdateTask: Task<Void, Never>?
+        weak var mapViewRef: MKMapView?
 
         init(_ parent: DraggableMapView) {
             self.parent = parent
+        }
+        
+        deinit {
+            // Clean up resources
+            scrollEndTask?.cancel()
+            regionUpdateTask?.cancel()
+            currentAnnotations.removeAll()
+            timezoneOverlays.removeAll()
         }
 
         @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
             switch gesture.state {
             case .began:
                 scrollEndTask?.cancel()
+                userIsInteracting = true
                 parent.isMapScrolling = true
             case .ended, .cancelled:
                 scheduleScrollEnd()
@@ -108,6 +139,7 @@ struct DraggableMapView: UIViewRepresentable {
             switch gesture.state {
             case .began:
                 scrollEndTask?.cancel()
+                userIsInteracting = true
                 parent.isMapScrolling = true
             case .ended, .cancelled:
                 scheduleScrollEnd()
@@ -125,13 +157,19 @@ struct DraggableMapView: UIViewRepresentable {
             scrollEndTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(800))
                 guard !Task.isCancelled else { return }
+                // Sync binding to where the map actually ended up, then allow updateUIView again
+                if let mapView = mapViewRef {
+                    shouldUpdateBinding = false
+                    parent.cameraPosition = mapView.region
+                }
+                userIsInteracting = false
                 parent.isMapScrolling = false
             }
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            // Also schedule scroll end here to catch momentum scrolling
-            if parent.isMapScrolling {
+            // Reschedule scroll end to catch momentum scrolling finishing
+            if userIsInteracting {
                 scheduleScrollEnd()
             }
         }
@@ -231,8 +269,8 @@ struct DraggableMapView: UIViewRepresentable {
                 annotationView?.annotation = annotation
             }
             
-            // Color based on lock status: green if locked, red if unlocked
-            annotationView?.markerTintColor = draggableAnnotation.isLocked ? .systemGreen : .systemRed
+            // Color based on lock status: red if locked, green if unlocked
+            annotationView?.markerTintColor = draggableAnnotation.isLocked ? .systemRed : .systemGreen
             
             // Add lock icon for locked locations
             if draggableAnnotation.isLocked {
@@ -244,14 +282,10 @@ struct DraggableMapView: UIViewRepresentable {
                 annotationView?.glyphImage = nil
             }
             
+            annotationView?.isUserInteractionEnabled = false // Let taps pass through pins to the map
             annotationView?.displayPriority = .required // Keep size consistent
-            
+
             return annotationView
-        }
-        
-        func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
-            // Immediately deselect so pins never stay enlarged
-            mapView.deselectAnnotation(annotation, animated: false)
         }
 
         // Remove the old delete button handler
@@ -270,14 +304,20 @@ struct DraggableMapView: UIViewRepresentable {
         }
         
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            // Don't update the binding during user interaction — we'll sync once at the end
+            guard !userIsInteracting else { return }
+
             // Only update binding if the change originated from user interaction
             guard shouldUpdateBinding else {
                 shouldUpdateBinding = true // Reset flag
                 return
             }
-            
-            // Use a transaction to prevent triggering view updates
-            Task { @MainActor in
+
+            // Debounce region updates to avoid creating a Task on every frame
+            regionUpdateTask?.cancel()
+            regionUpdateTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled else { return }
                 parent.cameraPosition = mapView.region
             }
         }
