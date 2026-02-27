@@ -21,6 +21,7 @@ struct FloatingLocationCard: View {
     @State private var cardOpacity: Double = 0.5  // Start at 50%, fade up to 75%
     @State private var showColon = true  // For flashing colon
     @State private var timerCancellable: AnyCancellable?
+    @State private var showingDeleteConfirmation = false
     
     // Reusable date formatter to avoid repeated allocations
     private static let timeFormatter: DateFormatter = {
@@ -40,14 +41,14 @@ struct FloatingLocationCard: View {
                 if isLarge {
                     // Large pills: Two-line layout with right-aligned time
                     HStack(spacing: 16) {
-                        // Lock icon on the left - tappable
-                        Button(action: onToggleLock) {
-                            Image(systemName: location.isLocked ? "lock.fill" : "lock.open.fill")
-                                .foregroundColor(location.isLocked ? .orange : .gray.opacity(0.3))
-                                .font(.system(size: 14))
-                                .frame(width: 16)
+                        // Delete button on the left
+                        Button(action: { showingDeleteConfirmation = true }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(location.isLocked ? .gray.opacity(0.3) : .red)
+                                .font(.system(size: 18))
                         }
                         .buttonStyle(.plain)
+                        .disabled(location.isLocked)
 
                         VStack(alignment: .leading, spacing: 4) {
                             // Line 1: Location name (always show country/city)
@@ -75,13 +76,14 @@ struct FloatingLocationCard: View {
                             .monospacedDigit()
                             .opacity(showColon ? 1.0 : 0.3)
 
-                        Button(action: onDelete) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(location.isLocked ? .gray.opacity(0.3) : .red)
-                                .font(.system(size: 18))
+                        // Lock icon on the right - tappable
+                        Button(action: onToggleLock) {
+                            Image(systemName: location.isLocked ? "lock.fill" : "lock.open.fill")
+                                .foregroundColor(location.isLocked ? .orange : .gray.opacity(0.3))
+                                .font(.system(size: 14))
+                                .frame(width: 16)
                         }
                         .buttonStyle(.plain)
-                        .disabled(location.isLocked)
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
@@ -93,14 +95,14 @@ struct FloatingLocationCard: View {
                 } else {
                     // Small pills: Single-line layout
                     HStack(spacing: 12) {
-                        // Lock icon on the left - tappable
-                        Button(action: onToggleLock) {
-                            Image(systemName: location.isLocked ? "lock.fill" : "lock.open.fill")
-                                .foregroundColor(location.isLocked ? .orange : .gray.opacity(0.3))
-                                .font(.system(size: 12))
-                                .frame(width: 14)
+                        // Delete button on the left
+                        Button(action: { showingDeleteConfirmation = true }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(location.isLocked ? .gray.opacity(0.3) : .red)
+                                .font(.system(size: 16))
                         }
                         .buttonStyle(.plain)
+                        .disabled(location.isLocked)
 
                         Text(location.locationName.replacingOccurrences(of: "_", with: " "))
                             .font(.system(size: 15))
@@ -124,13 +126,14 @@ struct FloatingLocationCard: View {
                             .monospacedDigit()
                             .opacity(showColon ? 1.0 : 0.3)
 
-                        Button(action: onDelete) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(location.isLocked ? .gray.opacity(0.3) : .red)
-                                .font(.system(size: 16))
+                        // Lock icon on the right - tappable
+                        Button(action: onToggleLock) {
+                            Image(systemName: location.isLocked ? "lock.fill" : "lock.open.fill")
+                                .foregroundColor(location.isLocked ? .orange : .gray.opacity(0.3))
+                                .font(.system(size: 12))
+                                .frame(width: 14)
                         }
                         .buttonStyle(.plain)
-                        .disabled(location.isLocked)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
@@ -189,12 +192,11 @@ struct FloatingLocationCard: View {
                             if dragOffset > 0 && !location.isLocked {
                                 let deleteThreshold = cardWidth * 0.3
                                 if dragOffset > deleteThreshold || velocity > 200 {
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        dragOffset = cardWidth
+                                    // Snap back and show confirmation
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        dragOffset = 0
                                     }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                        onDelete()
-                                    }
+                                    showingDeleteConfirmation = true
                                     return
                                 }
                             }
@@ -225,6 +227,14 @@ struct FloatingLocationCard: View {
         .onDisappear {
             // Cancel timer when view disappears
             stopTimer()
+        }
+        .alert("Delete Location", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                onDelete()
+            }
+        } message: {
+            Text("Are you sure you want to delete \(location.locationName.replacingOccurrences(of: "_", with: " "))?")
         }
     }
     

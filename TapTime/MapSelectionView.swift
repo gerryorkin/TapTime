@@ -38,6 +38,7 @@ struct MapSelectionView: View {
     @State private var showingOceanAlert = false
     @State private var showingDuplicateAlert = false
     @State private var showingHelp = false
+    @State private var searchResultsFromMapTap = false
     @FocusState private var isSearchFieldFocused: Bool
     @AppStorage("useLargePills") private var useLargePills = false
     @AppStorage("hasShownFirstLaunchHelp") private var hasShownFirstLaunchHelp = false
@@ -64,6 +65,7 @@ struct MapSelectionView: View {
                             let results = locationManager.searchLocations(query: countryName)
                             if !results.isEmpty {
                                 searchResults = results
+                                searchResultsFromMapTap = true
                                 showingSearchField = true
                                 withAnimation {
                                     showingSearchResults = true
@@ -505,13 +507,15 @@ struct MapSelectionView: View {
         autocompleteSuggestion = ""
         isSearchFieldFocused = false
         showingSearchField = false
+        let skipZoom = searchResultsFromMapTap
+        searchResultsFromMapTap = false
 
         Task {
             let (coordinate, addResult) = await locationManager.addLocation(from: result)
             await MainActor.run {
                 if case .duplicate = addResult {
                     showingDuplicateAlert = true
-                } else if let coordinate = coordinate {
+                } else if let coordinate = coordinate, !skipZoom {
                     withAnimation {
                         mapRegion = MKCoordinateRegion(
                             center: coordinate,

@@ -24,6 +24,10 @@ struct HelpView: View {
                         helpStep(number: "4", text: "Tap the Calendar button to set the date, and use the slider to set the time for the anchor location. All the other locations will reflect their local times, compared to the anchor location.")
 
                         helpStep(number: "5", text: "You can export the list of times using the Share button.")
+
+                        helpStep(number: "6", text: "You can delete a location on the Map screen by tapping the red Delete button. On the Location screen, swipe left on the Location you want to delete.")
+
+                        helpStep(number: "7", text: "There's a Sort button on the Location screen. You can sort the list by Local Time order, or choose to drag and drop the locations into any order you choose. Your location, and the anchor location (if it isn't also your location), cannot be dragged and dropped.")
                     }
                 }
                 .padding()
