@@ -8,6 +8,7 @@
 import Foundation
 import CoreLocation
 import MapKit
+import SwiftUI
 internal import Combine
 
 struct SearchResult: Identifiable {
@@ -321,18 +322,36 @@ class LocationManager: NSObject, ObservableObject {
 
         do {
             let decoder = JSONDecoder()
-            let decoded = try decoder.decode([SavedLocation].self, from: data)
-            savedLocations = locationsSortedByTime(decoded)
+            // Preserve the saved order — sort order is managed by the view, not the model
+            savedLocations = try decoder.decode([SavedLocation].self, from: data)
         } catch {
             print("Failed to load locations: \(error.localizedDescription)")
         }
     }
 
-    /// Append a location and re-sort by timezone offset
-    private func appendAndSort(_ location: SavedLocation) {
-        var updated = savedLocations
-        updated.append(location)
-        savedLocations = locationsSortedByTime(updated)
+    /// Append a new location without re-sorting (sort order is managed by the view)
+    private func appendLocation(_ location: SavedLocation) {
+        savedLocations.append(location)
+    }
+
+    /// Re-sort all saved locations by UTC offset. Called when user picks "Sort by Local Times".
+    func reorderByLocalTime() {
+        savedLocations = locationsSortedByTime(savedLocations)
+    }
+
+    /// Move locations for drag-and-drop reorder.
+    /// minDestination prevents dropping above a pinned row (e.g. the anchor at index 0).
+    func moveLocations(from source: IndexSet, to destination: Int, minDestination: Int = 0) {
+        let clamped = max(destination, minDestination)
+        savedLocations.move(fromOffsets: source, toOffset: clamped)
+    }
+
+    /// Move the location with the given id to the front of savedLocations.
+    /// Used in manual sort mode when a new location is selected as anchor.
+    func moveToFront(_ id: UUID) {
+        guard let idx = savedLocations.firstIndex(where: { $0.id == id }), idx != 0 else { return }
+        let loc = savedLocations.remove(at: idx)
+        savedLocations.insert(loc, at: 0)
     }
     
     /// Result of attempting to add a location
@@ -341,6 +360,7 @@ class LocationManager: NSObject, ObservableObject {
         case duplicate
         case limitReached
         case failed
+        case multipleTimeZones(country: String, countryCode: String, coordinate: CLLocationCoordinate2D)
     }
 
     /// Check if a timezone is already saved
@@ -385,7 +405,7 @@ class LocationManager: NSObject, ObservableObject {
                 timeZone: timeZone,
                 locationName: name
             )
-            appendAndSort(savedLocation)
+            appendLocation(savedLocation)
             print("✅ Added location from cache: \(name)")
             return .success
         }
@@ -416,6 +436,17 @@ class LocationManager: NSObject, ObservableObject {
 
             let timeZone = firstItem.timeZone ?? TimeZone.current
 
+            // If this country spans multiple distinct timezones, ask the user to pick
+            if let countryCode = placemark.countryCode,
+               CountryData.countryHasMultipleTimeZones(countryCode) {
+                cacheGeocoding(key: cacheKey, coordinate: coordinate, timeZone: timeZone)
+                return .multipleTimeZones(
+                    country: placemark.country ?? countryCode,
+                    countryCode: countryCode,
+                    coordinate: coordinate
+                )
+            }
+
             // Check for duplicate timezone
             if hasTimeZone(timeZone) {
                 buzzError()
@@ -442,7 +473,7 @@ class LocationManager: NSObject, ObservableObject {
                 locationName: name
             )
 
-            appendAndSort(savedLocation)
+            appendLocation(savedLocation)
             print("✅ Added location: \(name)")
             return .success
         } catch {
@@ -561,7 +592,7 @@ class LocationManager: NSObject, ObservableObject {
                             timeZone: resolvedTZ,
                             locationName: friendlyName
                         )
-                        appendAndSort(savedLocation)
+                        appendLocation(savedLocation)
                         print("✅ Added location: \(searchResult.name) (\(resolvedTZ.identifier))")
                         return (coordinate, .success)
                     }
@@ -581,7 +612,7 @@ class LocationManager: NSObject, ObservableObject {
             locationName: CountryData.friendlyName(for: searchResult.timeZone.identifier)
         )
 
-        appendAndSort(savedLocation)
+        appendLocation(savedLocation)
         print("✅ Added location: \(searchResult.name) (\(searchResult.timeZone.identifier))")
         return (coordinate, .success)
     }
@@ -637,7 +668,7 @@ class LocationManager: NSObject, ObservableObject {
                     locationName: name
                 )
 
-                appendAndSort(savedLocation)
+                appendLocation(savedLocation)
                 return (coordinate, .success)
             }
         } catch {
@@ -666,7 +697,7 @@ class LocationManager: NSObject, ObservableObject {
                     locationName: friendlyName
                 )
 
-                appendAndSort(savedLocation)
+                appendLocation(savedLocation)
                 return coordinate
             }
 
@@ -692,7 +723,7 @@ class LocationManager: NSObject, ObservableObject {
                         locationName: finalName
                     )
 
-                    appendAndSort(savedLocation)
+                    appendLocation(savedLocation)
                     return coordinate
                 }
             } catch {
@@ -709,7 +740,7 @@ class LocationManager: NSObject, ObservableObject {
             locationName: friendlyName
         )
 
-        appendAndSort(savedLocation)
+        appendLocation(savedLocation)
         return coordinate
     }
 
@@ -791,7 +822,7 @@ class LocationManager: NSObject, ObservableObject {
                         timeZone: timeZone,
                         locationName: name
                     )
-                    savedLocations = locationsSortedByTime(updated)
+                    savedLocations = updated // Preserve user's order after coordinate update
                 }
             } else {
                 // No map item — just update coordinate

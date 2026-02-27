@@ -54,8 +54,23 @@ struct MapSelectionView: View {
                 onTap: { coordinate in
                     Task {
                         let result = await locationManager.addLocation(at: coordinate)
-                        if result == .duplicate {
+                        switch result {
+                        case .duplicate:
                             showingDuplicateAlert = true
+                        case .multipleTimeZones(_, let countryCode, _):
+                            // Reuse the existing search-results picker
+                            let locale = NSLocale(localeIdentifier: "en_US")
+                            let countryName = locale.displayName(forKey: .countryCode, value: countryCode) ?? countryCode
+                            let results = locationManager.searchLocations(query: countryName)
+                            if !results.isEmpty {
+                                searchResults = results
+                                showingSearchField = true
+                                withAnimation {
+                                    showingSearchResults = true
+                                }
+                            }
+                        default:
+                            break
                         }
                     }
                 },
@@ -494,7 +509,7 @@ struct MapSelectionView: View {
         Task {
             let (coordinate, addResult) = await locationManager.addLocation(from: result)
             await MainActor.run {
-                if addResult == .duplicate {
+                if case .duplicate = addResult {
                     showingDuplicateAlert = true
                 } else if let coordinate = coordinate {
                     withAnimation {

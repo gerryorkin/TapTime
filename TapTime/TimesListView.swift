@@ -45,10 +45,16 @@ struct TimesListView: View {
         return "Your location"
     }
 
-    // Computed property to get sorted locations with selected one at top
+    // Computed property to get sorted locations.
+    // "byLocalTime": sort by UTC offset, selected at top.
+    // "manual": return saved order as-is (drag-and-drop reorders this).
     var sortedLocations: [SavedLocation] {
+        if locationSortMode == "manual" {
+            return locationManager.savedLocations
+        }
+
+        // byLocalTime: sort by UTC offset, with selected location at top
         guard let selectedID = selectedLocationID else {
-            // No location selected - sort all by time zone offset
             return locationManager.savedLocations.sorted { location1, location2 in
                 let offset1 = location1.timeZone.secondsFromGMT(for: selectedDate)
                 let offset2 = location2.timeZone.secondsFromGMT(for: selectedDate)
@@ -57,23 +63,20 @@ struct TimesListView: View {
         }
 
         var sorted = locationManager.savedLocations
-        // Remove selected location
         if let selectedIndex = sorted.firstIndex(where: { $0.id == selectedID }) {
             let selectedLocation = sorted.remove(at: selectedIndex)
-
-            // Sort remaining locations by time zone offset
             sorted.sort { location1, location2 in
                 let offset1 = location1.timeZone.secondsFromGMT(for: selectedDate)
                 let offset2 = location2.timeZone.secondsFromGMT(for: selectedDate)
                 return offset1 < offset2
             }
-
-            // Insert selected location at the top
             sorted.insert(selectedLocation, at: 0)
         }
         return sorted
     }
 
+    @AppStorage("locationSortMode") private var locationSortMode: String = "byLocalTime"
+    @State private var listEditMode: EditMode = .inactive
     @AppStorage("showingCalendar") private var showingCalendar = false
     @State private var showingClearConfirmation = false
     @State private var showingMeetingNamePrompt = false
@@ -107,6 +110,32 @@ struct TimesListView: View {
                         }
 
                         Spacer()
+
+                        // Sort order menu
+                        Menu {
+                            Button(action: {
+                                locationSortMode = "byLocalTime"
+                                listEditMode = .inactive
+                                locationManager.reorderByLocalTime()
+                            }) {
+                                Label("Sort by Local Times", systemImage: "clock.arrow.2.circlepath")
+                                if locationSortMode == "byLocalTime" { Image(systemName: "checkmark") }
+                            }
+                            Button(action: {
+                                locationSortMode = "manual"
+                                listEditMode = .active
+                                if let id = selectedLocationID {
+                                    locationManager.moveToFront(id)
+                                }
+                            }) {
+                                Label("Manual Order", systemImage: "hand.draw.fill")
+                                if locationSortMode == "manual" { Image(systemName: "checkmark") }
+                            }
+                        } label: {
+                            Image(systemName: locationSortMode == "manual" ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle")
+                                .font(.system(size: 32))
+                        }
+                        .buttonStyle(.plain)
 
                         // Meeting menu (Save, Open, Clear)
                         Menu {
@@ -164,94 +193,142 @@ struct TimesListView: View {
 
                 // Scrollable list of locations
                 ScrollViewReader { scrollProxy in
-                    ScrollView(.vertical, showsIndicators: true) {
-                        LazyVStack(spacing: 12) {
-                            Color.clear
-                                .frame(height: 0)
-                                .id("list-top")
-
-                            // User's location - shown first if selected, otherwise after selected saved location
-                            if selectedLocationID == nil {
-                                CompactTimeCard(
-                                    title: "Your location",
-                                    timeZone: locationManager.userTimeZone,
-                                    selectedDate: selectedDate,
-                                    isUserLocation: true,
-                                    isSelected: true,
-                                    isLocked: false,
-                                    locationId: nil,
-                                    onDelete: nil,
-                                    onTap: {
-                                        selectedLocationIDString = ""
-                                        selectedDate = Date()
-                                    },
-                                    onToggleLock: nil
-                                )
-                                .padding(.horizontal, 16)
-                                .id("your-location-selected")
-                            }
-
-                            // All saved locations in sorted order
-                            ForEach(sortedLocations) { location in
-                                CompactTimeCard(
-                                    title: location.locationName,
-                                    timeZone: location.timeZone,
-                                    selectedDate: selectedDate,
-                                    isUserLocation: false,
-                                    isSelected: selectedLocationID == location.id,
-                                    isLocked: location.isLocked,
-                                    locationId: location.id,
-                                    onDelete: {
-                                        if selectedLocationID == location.id {
-                                            selectedLocationIDString = ""
-                                        }
-                                        withAnimation {
-                                            locationManager.removeLocation(location)
-                                        }
-                                    },
-                                    onTap: {
-                                        selectedLocationIDString = location.id.uuidString
-                                        selectedDate = Date()
-                                    },
-                                    onToggleLock: {
-                                        locationManager.toggleLock(for: location.id)
-                                    }
-                                )
-                                .padding(.horizontal, 16)
-                                .id(location.id)
-                            }
-
-                            // User's location - shown after saved locations when not selected
-                            if selectedLocationID != nil {
-                                CompactTimeCard(
-                                    title: "Your location",
-                                    timeZone: locationManager.userTimeZone,
-                                    selectedDate: selectedDate,
-                                    isUserLocation: true,
-                                    isSelected: false,
-                                    isLocked: false,
-                                    locationId: nil,
-                                    onDelete: nil,
-                                    onTap: {
-                                        selectedLocationIDString = ""
-                                        selectedDate = Date()
-                                    },
-                                    onToggleLock: nil
-                                )
-                                .padding(.horizontal, 16)
-                                .id("your-location-unselected")
-                            }
+                    List {
+                        // User's location — shown first when nothing is selected
+                        if selectedLocationID == nil {
+                            CompactTimeCard(
+                                title: "Your location",
+                                timeZone: locationManager.userTimeZone,
+                                selectedDate: selectedDate,
+                                isUserLocation: true,
+                                isSelected: true,
+                                isLocked: false,
+                                locationId: nil,
+                                onDelete: nil,
+                                onTap: {
+                                    selectedLocationIDString = ""
+                                    selectedDate = Date()
+                                },
+                                onToggleLock: nil
+                            )
+                            .padding(.horizontal, 16)
+                            .id("your-location-selected")
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .moveDisabled(true)
+                            .deleteDisabled(true)
                         }
-                        .padding(.vertical, 12)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: selectedLocationID)
+
+                        // All saved locations
+                        ForEach(sortedLocations) { location in
+                            CompactTimeCard(
+                                title: location.locationName,
+                                timeZone: location.timeZone,
+                                selectedDate: selectedDate,
+                                isUserLocation: false,
+                                isSelected: selectedLocationID == location.id,
+                                isLocked: location.isLocked,
+                                locationId: location.id,
+                                onDelete: {
+                                    if selectedLocationID == location.id {
+                                        selectedLocationIDString = ""
+                                    }
+                                    withAnimation {
+                                        locationManager.removeLocation(location)
+                                    }
+                                },
+                                onTap: {
+                                    selectedLocationIDString = location.id.uuidString
+                                    selectedDate = Date()
+                                },
+                                onToggleLock: {
+                                    locationManager.toggleLock(for: location.id)
+                                }
+                            )
+                            .compositingGroup()
+                            .padding(.horizontal, 16)
+                            .id(location.id)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(selectedLocationID == location.id
+                                          ? Color(red: 1.0, green: 0.9, blue: 0.95)
+                                          : Color(uiColor: .secondarySystemBackground))
+                                    .padding(.horizontal, 16)
+                            )
+                            .moveDisabled(location.isLocked || selectedLocationID == location.id)
+                            .deleteDisabled(true)
+                        }
+                        .onMove(perform: locationSortMode == "manual" ? { source, destination in
+                            // minDestination=1 guards the anchor row at index 0
+                            let minDest = selectedLocationID != nil ? 1 : 0
+                            locationManager.moveLocations(from: source, to: destination, minDestination: minDest)
+                        } : nil)
+
+                        // User's location — shown after saved locations when one is selected
+                        if selectedLocationID != nil {
+                            CompactTimeCard(
+                                title: "Your location",
+                                timeZone: locationManager.userTimeZone,
+                                selectedDate: selectedDate,
+                                isUserLocation: true,
+                                isSelected: false,
+                                isLocked: false,
+                                locationId: nil,
+                                onDelete: nil,
+                                onTap: {
+                                    selectedLocationIDString = ""
+                                    selectedDate = Date()
+                                },
+                                onToggleLock: nil
+                            )
+                            .padding(.horizontal, 16)
+                            .id("your-location-unselected")
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .moveDisabled(true)
+                            .deleteDisabled(true)
+                        }
                     }
-                    .onChange(of: selectedLocationID) { _, _ in
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            scrollProxy.scrollTo("list-top", anchor: .top)
+                    .listRowSpacing(12)
+                    .contentMargins(.top, 8)
+                    .listStyle(.plain)
+                    .environment(\.editMode, $listEditMode)
+                    // Only animate row reordering in byLocalTime mode; in manual mode the
+                    // native drag-to-reorder animation handles it and extra animation causes revert.
+                    .animation(locationSortMode == "byLocalTime" ? .spring(response: 0.5, dampingFraction: 0.8) : nil, value: sortedLocations.map { $0.id })
+                    .onAppear {
+                        listEditMode = locationSortMode == "manual" ? .active : .inactive
+                        // Ensure the anchor is at position 0 if we launch into manual mode
+                        if locationSortMode == "manual", let id = selectedLocationID {
+                            locationManager.moveToFront(id)
+                        }
+                    }
+                    .onChange(of: locationSortMode) { _, newValue in
+                        listEditMode = newValue == "manual" ? .active : .inactive
+                        // Move newly-anchored selection to front when switching to manual
+                        if newValue == "manual", let id = selectedLocationID {
+                            locationManager.moveToFront(id)
+                        }
+                    }
+                    .onChange(of: selectedLocationID) { _, newID in
+                        if locationSortMode == "manual" {
+                            // New selection becomes anchor at position 0
+                            if let id = newID {
+                                locationManager.moveToFront(id)
+                            }
+                        } else {
+                            if let firstID = sortedLocations.first?.id {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    scrollProxy.scrollTo(firstID, anchor: .top)
+                                }
+                            }
                         }
                     }
                 }
-                .scrollDisabled(false)
                 .onAppear {
                     if let selectedID = selectedLocationID {
                         let locationExists = locationManager.savedLocations.contains { $0.id == selectedID }
