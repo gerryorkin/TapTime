@@ -176,6 +176,7 @@ struct TimesListView: View {
                                 isSelected: true,
                                 isLocked: false,
                                 locationId: nil,
+                                coordinate: locationManager.userLocation,
                                 onDelete: nil,
                                 onTap: {
                                     selectedLocationIDString = ""
@@ -202,6 +203,7 @@ struct TimesListView: View {
                                 isSelected: selectedLocationID == location.id,
                                 isLocked: location.isLocked,
                                 locationId: location.id,
+                                coordinate: location.coordinate,
                                 onDelete: {
                                     if selectedLocationID == location.id {
                                         selectedLocationIDString = ""
@@ -223,13 +225,7 @@ struct TimesListView: View {
                             .id(location.id)
                             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                             .listRowSeparator(.hidden)
-                            .listRowBackground(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(selectedLocationID == location.id
-                                          ? Color.accentColor.opacity(0.15)
-                                          : Color(uiColor: .secondarySystemBackground))
-                                    .padding(.horizontal, 16)
-                            )
+                            .listRowBackground(Color.clear)
                             .moveDisabled(location.isLocked || selectedLocationID == location.id || reorderableCount < 2)
                             .deleteDisabled(true)
                         }
@@ -249,6 +245,7 @@ struct TimesListView: View {
                                 isSelected: false,
                                 isLocked: false,
                                 locationId: nil,
+                                coordinate: locationManager.userLocation,
                                 onDelete: nil,
                                 onTap: {
                                     selectedLocationIDString = ""

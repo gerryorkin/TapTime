@@ -14,6 +14,7 @@ struct SettingsView: View {
     // Pill appearance properties kept for future use
     @AppStorage("pillOpacity") private var pillOpacity: Double = 0.9
     @AppStorage("pillColorData") private var pillColorData: Data = defaultPillColorData
+    @AppStorage("APP_backgroundStyle") private var backgroundStyle: String = "photos"
 
     var body: some View {
         NavigationView {
@@ -24,6 +25,34 @@ struct SettingsView: View {
                     Text("Display Options")
                 } footer: {
                     Text("Show location buttons with larger text and increased padding")
+                }
+
+                Section {
+                    Picker("Row Background", selection: $backgroundStyle) {
+                        Text("Landmark Photos").tag("photos")
+                        Text("Map").tag("map")
+                        Text("None").tag("none")
+                    }
+
+                    if backgroundStyle == "photos" {
+                        Button(role: .destructive) {
+                            LandmarkPhotoService.shared.clearCache()
+                        } label: {
+                            Label("Refresh Photos", systemImage: "arrow.clockwise")
+                        }
+                    }
+
+                    if backgroundStyle == "map" {
+                        Button(role: .destructive) {
+                            MapSnapshotService.shared.clearCache()
+                        } label: {
+                            Label("Refresh Maps", systemImage: "arrow.clockwise")
+                        }
+                    }
+                } header: {
+                    Text("Row Background")
+                } footer: {
+                    Text("Choose what to show behind each location row")
                 }
 
                 Section {

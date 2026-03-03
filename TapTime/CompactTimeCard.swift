@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct CompactTimeCard: View {
     let title: String
@@ -15,6 +16,7 @@ struct CompactTimeCard: View {
     let isSelected: Bool
     let isLocked: Bool
     let locationId: UUID?
+    let coordinate: CLLocationCoordinate2D?
     let onDelete: (() -> Void)?
     let onTap: () -> Void
     let onToggleLock: (() -> Void)?
@@ -34,12 +36,27 @@ struct CompactTimeCard: View {
         return formatter
     }()
 
-    // Random stub image selection
-    let stubImages = ["stub-dawn", "stub-night", "stub-midmorning", "stub-midday", "stub-midafternoon", "stub-earlyevening"]
-    var randomStub: String {
-        // Use title hash for consistent randomness per location
-        let hash = abs(title.hashValue)
-        return stubImages[hash % stubImages.count]
+    @ObservedObject private var photoService = LandmarkPhotoService.shared
+    @ObservedObject private var mapService = MapSnapshotService.shared
+    @AppStorage("APP_backgroundStyle") private var backgroundStyle: String = "photos"
+
+    private var photoSlug: String {
+        LandmarkPhotoService.searchInfo(from: title, timeZone: timeZone).slug
+    }
+
+    private var mapSlug: String {
+        MapSnapshotService.slug(for: title, timeZone: timeZone)
+    }
+
+    private var hasPhoto: Bool {
+        switch backgroundStyle {
+        case "photos":
+            return photoService.photo(forSlug: photoSlug) != nil
+        case "map":
+            return mapService.snapshot(forSlug: mapSlug) != nil
+        default:
+            return false
+        }
     }
 
     @Environment(\.colorScheme) private var colorScheme
@@ -94,6 +111,7 @@ struct CompactTimeCard: View {
                     Text((parts.first.map(String.init) ?? title).replacingOccurrences(of: "_", with: " "))
                         .font(.title3)
                         .fontWeight(.semibold)
+                        .foregroundColor(.primary)
                         .lineLimit(1)
                     // Second line: always show city if available
                     if parts.count > 1 {
@@ -108,6 +126,7 @@ struct CompactTimeCard: View {
                 if isSelected {
                     Text("⚓")
                         .font(.system(size: 20))
+                        .shadow(color: hasPhoto ? .black : .clear, radius: 2, x: 0, y: 1)
                 }
 
                 Spacer(minLength: 8)
@@ -117,6 +136,7 @@ struct CompactTimeCard: View {
                     Text(formattedTime())
                         .font(.system(.title3, design: .rounded))
                         .fontWeight(.bold)
+                        .foregroundColor(.primary)
                         .monospacedDigit()
                         .fixedSize(horizontal: true, vertical: false)
 
@@ -137,11 +157,30 @@ struct CompactTimeCard: View {
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                isSelected ? Color.accentColor.opacity(0.15) :
-                isUserLocation ? (colorScheme == .dark ? Color.accentColor.opacity(0.15) : Color.blue.opacity(0.1)) :
-                Color(uiColor: .secondarySystemBackground)
+                ZStack {
+                    // Fallback solid color
+                    isSelected ? Color.accentColor.opacity(0.15) :
+                    isUserLocation ? (colorScheme == .dark ? Color.accentColor.opacity(0.15) : Color.blue.opacity(0.1)) :
+                    Color(uiColor: .secondarySystemBackground)
+
+                    // Background overlay based on style
+                    switch backgroundStyle {
+                    case "photos":
+                        LandmarkPhotoView(locationName: title, timeZone: timeZone)
+                    case "map":
+                        if let image = mapService.snapshot(forSlug: mapSlug) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .opacity(0.3)
+                        }
+                    default:
+                        EmptyView()
+                    }
+                }
             )
             .cornerRadius(12)
+            .clipped()
             .offset(x: offset)
             .contentShape(Rectangle())
             .onTapGesture {
@@ -234,6 +273,47 @@ struct CompactTimeCard: View {
             offset = 0
             isThresholdReached = false
             isSwiping = false
+
+            // One-time migration: APP_showLandmarkPhotos (Bool) -> APP_backgroundStyle (String)
+            if UserDefaults.standard.object(forKey: "APP_showLandmarkPhotos") != nil {
+                let oldValue = UserDefaults.standard.bool(forKey: "APP_showLandmarkPhotos")
+                if !oldValue {
+                    backgroundStyle = "none"
+                }
+                UserDefaults.standard.removeObject(forKey: "APP_showLandmarkPhotos")
+            }
+
+            // Trigger background load based on style
+            switch backgroundStyle {
+            case "photos":
+                let info = LandmarkPhotoService.searchInfo(from: title, timeZone: timeZone)
+                if !info.query.isEmpty {
+                    photoService.loadPhoto(query: info.query, slug: info.slug)
+                }
+            case "map":
+                if let coord = coordinate {
+                    let slug = MapSnapshotService.slug(for: title, timeZone: timeZone)
+                    mapService.loadSnapshot(locationName: title, timeZone: timeZone, fallbackCoordinate: coord, slug: slug)
+                }
+            default:
+                break
+            }
+        }
+        .onChange(of: backgroundStyle) { _, newStyle in
+            switch newStyle {
+            case "photos":
+                let info = LandmarkPhotoService.searchInfo(from: title, timeZone: timeZone)
+                if !info.query.isEmpty {
+                    photoService.loadPhoto(query: info.query, slug: info.slug)
+                }
+            case "map":
+                if let coord = coordinate {
+                    let slug = MapSnapshotService.slug(for: title, timeZone: timeZone)
+                    mapService.loadSnapshot(locationName: title, timeZone: timeZone, fallbackCoordinate: coord, slug: slug)
+                }
+            default:
+                break
+            }
         }
         .alert("Delete Location", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
