@@ -39,6 +39,7 @@ struct CompactTimeCard: View {
     @ObservedObject private var photoService = LandmarkPhotoService.shared
     @ObservedObject private var mapService = MapSnapshotService.shared
     @AppStorage("APP_backgroundStyle") private var backgroundStyle: String = "photos"
+    @AppStorage("APP_fullToneBackground") private var fullToneBackground: Bool = false
 
     private var photoSlug: String {
         LandmarkPhotoService.searchInfo(from: title, timeZone: timeZone).slug
@@ -48,12 +49,29 @@ struct CompactTimeCard: View {
         MapSnapshotService.slug(for: title, timeZone: timeZone)
     }
 
+    private var countryFlag: String? {
+        let countryCode: String?
+        if isUserLocation || title == "Your location" {
+            countryCode = CountryData.timeZoneToCountryCode[timeZone.identifier]
+        } else {
+            let parts = title.split(separator: "/", maxSplits: 1)
+            let countryName = (parts.first.map(String.init) ?? title).replacingOccurrences(of: "_", with: " ")
+            countryCode = CountryData.countryNameToCode[countryName.lowercased()]
+        }
+        guard let code = countryCode, code.count == 2 else { return nil }
+        let base: UInt32 = 0x1F1E6 - 65
+        let flag = code.uppercased().unicodeScalars.compactMap { Unicode.Scalar(base + $0.value) }.map { String($0) }.joined()
+        return flag.isEmpty ? nil : flag
+    }
+
     private var hasPhoto: Bool {
         switch backgroundStyle {
         case "photos":
             return photoService.photo(forSlug: photoSlug) != nil
         case "map":
             return mapService.snapshot(forSlug: mapSlug) != nil
+        case "flag":
+            return countryFlag != nil
         default:
             return false
         }
@@ -85,25 +103,7 @@ struct CompactTimeCard: View {
             }
 
             // Main card content
-            HStack(alignment: .center, spacing: 16) {
-                // Lock icon - show for all locations
-                if isUserLocation {
-                    // Your Location - always locked, not tappable
-                    Image(systemName: "lock.fill")
-                        .foregroundColor(.orange)
-                        .font(.system(size: 16))
-                        .frame(width: 20)
-                } else if let onToggleLock = onToggleLock {
-                    // Saved locations - tappable lock toggle
-                    Button(action: onToggleLock) {
-                        Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
-                            .foregroundColor(isLocked ? .orange : .gray.opacity(0.3))
-                            .font(.system(size: 16))
-                            .frame(width: 20)
-                    }
-                    .buttonStyle(.plain)
-                }
-
+            HStack(alignment: .center, spacing: 12) {
                 // Location name - country on first line, city on second line
                 VStack(alignment: .leading, spacing: 1) {
                     let parts = title.split(separator: "/", maxSplits: 1)
@@ -113,20 +113,23 @@ struct CompactTimeCard: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                         .lineLimit(1)
-                    // Second line: always show city if available
+                    // Second line: city if available, invisible spacer for consistent height
                     if parts.count > 1 {
                         Text(parts[1].replacingOccurrences(of: "_", with: " "))
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
+                    } else if isUserLocation {
+                        Text(timeZone.identifier.replacingOccurrences(of: "_", with: " "))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text(" ")
+                            .font(.subheadline)
                     }
-                }
-
-                if isSelected {
-                    Text("⚓")
-                        .font(.system(size: 20))
-                        .shadow(color: hasPhoto ? .black : .clear, radius: 2, x: 0, y: 1)
                 }
 
                 Spacer(minLength: 8)
@@ -150,6 +153,9 @@ struct CompactTimeCard: View {
                             .font(.caption)
                             .foregroundColor(.blue)
                             .fixedSize(horizontal: true, vertical: false)
+                    } else {
+                        Text(" ")
+                            .font(.caption)
                     }
                 }
             }
@@ -172,13 +178,52 @@ struct CompactTimeCard: View {
                             Image(uiImage: image)
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .opacity(0.3)
+                                .opacity(fullToneBackground ? 1.0 : 0.3)
+                        }
+                    case "flag":
+                        if !isUserLocation, let flag = countryFlag {
+                            Text(flag)
+                                .font(.system(size: 96))
+                                .opacity(fullToneBackground ? 1.0 : 0.15)
+                                .frame(maxWidth: .infinity)
                         }
                     default:
                         EmptyView()
                     }
                 }
             )
+            .overlay(alignment: .topLeading) {
+                // Lock icon at top-left corner (hidden for now)
+                Group {
+                    if isUserLocation {
+                        Image(systemName: "lock.fill")
+                            .foregroundColor(.orange)
+                            .font(.system(size: 10))
+                    } else if let onToggleLock = onToggleLock {
+                        Button(action: onToggleLock) {
+                            Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
+                                .foregroundColor(isLocked ? .orange : .gray.opacity(0.3))
+                                .font(.system(size: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(6)
+                .hidden()
+            }
+            .overlay(alignment: .topLeading) {
+                if isSelected {
+                    ZStack {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 18, height: 18)
+                            .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+                        Text("⚓")
+                            .font(.system(size: 9))
+                    }
+                    .padding(6)
+                }
+            }
             .cornerRadius(12)
             .clipped()
             .offset(x: offset)
@@ -190,73 +235,51 @@ struct CompactTimeCard: View {
                 onTap()
             }
             .simultaneousGesture(isUserLocation ? nil :
-                DragGesture(minimumDistance: 20)
+                DragGesture(minimumDistance: 30)
                     .onChanged { gesture in
-                        // Don't allow swiping locked items
                         guard !isLocked else { return }
 
                         let translation = gesture.translation
                         let horizontalMovement = abs(translation.width)
                         let verticalMovement = abs(translation.height)
 
-                        // Only activate if horizontal movement is at least 3x the vertical movement
-                        // AND there's at least 30 points of horizontal movement
-                        if horizontalMovement > verticalMovement * 3 && horizontalMovement > 30 {
-                            // Only allow swiping left (negative offset)
-                            if translation.width < 0 {
-                                offset = translation.width
+                        // Commit to swiping only once, on first significant movement
+                        if !isSwiping {
+                            guard horizontalMovement > verticalMovement * 2
+                                    && translation.width < 0
+                                    && horizontalMovement > 30 else { return }
+                            isSwiping = true
+                        }
 
-                                // Check if pulse threshold is reached (35% for pulsing)
-                                let pulseThreshold = -cardWidth * 0.35
+                        // Track the horizontal offset
+                        if translation.width < 0 {
+                            offset = translation.width
 
-                                if offset < pulseThreshold {
-                                    if !isThresholdReached {
-                                        isThresholdReached = true
-                                        // Haptic feedback when pulse threshold is crossed
-                                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                                        impactFeedback.impactOccurred()
-                                    }
-                                } else {
-                                    if isThresholdReached {
-                                        isThresholdReached = false
-                                    }
+                            let pulseThreshold = -cardWidth * 0.35
+                            if offset < pulseThreshold {
+                                if !isThresholdReached {
+                                    isThresholdReached = true
+                                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                                    impactFeedback.impactOccurred()
                                 }
+                            } else if isThresholdReached {
+                                isThresholdReached = false
                             }
                         }
                     }
-                    .onEnded { gesture in
-                        // Don't allow swiping locked items
-                        guard !isLocked else { return }
+                    .onEnded { _ in
+                        defer { isSwiping = false }
+                        guard isSwiping else { return }
 
-                        let translation = gesture.translation
-                        let horizontalMovement = abs(translation.width)
-                        let verticalMovement = abs(translation.height)
+                        let deleteThreshold = -cardWidth * 0.40
 
-                        // Only process if it was primarily horizontal (3x ratio + 30pt minimum)
-                        if horizontalMovement > verticalMovement * 3 && horizontalMovement > 30 {
-                            let deleteThreshold = -cardWidth * 0.40
+                        if offset < deleteThreshold {
+                            showingDeleteConfirmation = true
+                        }
 
-                            if offset < deleteThreshold {
-                                // Swipe far enough - show confirmation
-                                showingDeleteConfirmation = true
-                                // Snap back while showing confirmation
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    offset = 0
-                                    isThresholdReached = false
-                                }
-                            } else {
-                                // Not far enough - snap back
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    offset = 0
-                                    isThresholdReached = false
-                                }
-                            }
-                        } else {
-                            // Was a vertical swipe or not strong enough horizontal, reset
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                offset = 0
-                                isThresholdReached = false
-                            }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            offset = 0
+                            isThresholdReached = false
                         }
                     }
             )

@@ -15,6 +15,7 @@ struct SettingsView: View {
     @AppStorage("pillOpacity") private var pillOpacity: Double = 0.9
     @AppStorage("pillColorData") private var pillColorData: Data = defaultPillColorData
     @AppStorage("APP_backgroundStyle") private var backgroundStyle: String = "photos"
+    @AppStorage("APP_fullToneBackground") private var fullToneBackground: Bool = false
 
     var body: some View {
         NavigationView {
@@ -31,6 +32,7 @@ struct SettingsView: View {
                     Picker("Row Background", selection: $backgroundStyle) {
                         Text("Landmark Photos").tag("photos")
                         Text("Map").tag("map")
+                        Text("Flag").tag("flag")
                         Text("None").tag("none")
                     }
 
@@ -49,10 +51,15 @@ struct SettingsView: View {
                             Label("Refresh Maps", systemImage: "arrow.clockwise")
                         }
                     }
+                    if backgroundStyle != "none" {
+                        Toggle("Full Tone", isOn: $fullToneBackground)
+                    }
                 } header: {
                     Text("Row Background")
                 } footer: {
-                    Text("Choose what to show behind each location row")
+                    Text(fullToneBackground && backgroundStyle != "none"
+                         ? "Background images shown at full intensity"
+                         : "Choose what to show behind each location row")
                 }
 
                 Section {

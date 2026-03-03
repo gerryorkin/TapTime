@@ -9,6 +9,7 @@ struct LandmarkPhotoView: View {
     let locationName: String
     let timeZone: TimeZone
     @ObservedObject private var photoService = LandmarkPhotoService.shared
+    @AppStorage("APP_fullToneBackground") private var fullToneBackground: Bool = false
 
     private var searchInfo: (query: String, slug: String) {
         LandmarkPhotoService.searchInfo(from: locationName, timeZone: timeZone)
@@ -24,7 +25,7 @@ struct LandmarkPhotoView: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .opacity(0.3)
+                    .opacity(fullToneBackground ? 1.0 : 0.3)
             }
         }
         .onAppear {

@@ -79,6 +79,8 @@ struct TimesListView: View {
     @AppStorage("showingCalendar") private var showingCalendar = false
     @State private var showingClearConfirmation = false
     @State private var showingSharePrompt = false
+    @State private var showingSettings = false
+    @AppStorage("useLargePills") private var useLargePills = false
     @AppStorage("meetingName") private var meetingName = ""
 
     var body: some View {
@@ -100,6 +102,12 @@ struct TimesListView: View {
                         HStack {
                         Button(action: onBack) {
                             Image(systemName: "map")
+                                .font(.system(size: 32))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { showingSettings = true }) {
+                            Image(systemName: "gearshape")
                                 .font(.system(size: 32))
                         }
                         .buttonStyle(.plain)
@@ -289,7 +297,9 @@ struct TimesListView: View {
                             if let id = newID {
                                 locationManager.moveToFront(id)
                             }
-                        } else {
+                        }
+                        // Always scroll to top when anchor changes
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             if let firstID = sortedLocations.first?.id {
                                 withAnimation(.easeInOut(duration: 0.3)) {
                                     scrollProxy.scrollTo(firstID, anchor: .top)
@@ -381,6 +391,9 @@ struct TimesListView: View {
             } else {
                 return Text("This will remove all saved locations and reset to your current local date and time.")
             }
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(useLargePills: $useLargePills)
         }
     }
 
