@@ -32,12 +32,6 @@ struct DraggableCalendarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Timezone indicator
-            Text("Meeting time zone: \(timeZone.identifier.replacingOccurrences(of: "_", with: " "))")
-                .font(.caption)
-                .foregroundColor(.pink)
-                .padding(.top, 4)
-
             // Header with month/year (no chevrons)
             HStack {
                 Spacer()
@@ -131,7 +125,7 @@ struct DraggableCalendarView: View {
                     }
                 }
         )
-        .background(Color.white)
+        .background(Color(uiColor: .systemBackground))
         .onAppear {
             currentMonth = selectedDate
         }
@@ -250,7 +244,7 @@ struct TimeScrubberView: View {
                     .frame(width: 20, height: 20)
                     .overlay(
                         Circle()
-                            .stroke(Color.black, lineWidth: 2)
+                            .stroke(Color.primary, lineWidth: 2)
                     )
                     .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
                     .offset(x: (geometry.size.width * CGFloat(timeProgress)) - 10)

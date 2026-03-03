@@ -42,6 +42,8 @@ struct CompactTimeCard: View {
         return stubImages[hash % stubImages.count]
     }
 
+    @Environment(\.colorScheme) private var colorScheme
+
     @State private var offset: CGFloat = 0
     @State private var isSwiping = false
     @State private var isThresholdReached = false
@@ -135,8 +137,8 @@ struct CompactTimeCard: View {
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                isSelected ? Color(red: 1.0, green: 0.9, blue: 0.95) :
-                isUserLocation ? Color.blue.opacity(0.1) :
+                isSelected ? Color.accentColor.opacity(0.15) :
+                isUserLocation ? (colorScheme == .dark ? Color.accentColor.opacity(0.15) : Color.blue.opacity(0.1)) :
                 Color(uiColor: .secondarySystemBackground)
             )
             .cornerRadius(12)

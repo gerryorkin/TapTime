@@ -14,12 +14,6 @@ struct TimesListView: View {
     @AppStorage("selectedDateTimestamp") private var selectedDateTimestamp: Double = Date().timeIntervalSince1970
     @AppStorage("selectedLocationID") private var selectedLocationIDString: String = ""
 
-    @StateObject private var meetingStorage = MeetingStorage()
-    @AppStorage("currentMeetingID") private var currentMeetingIDString: String = ""
-    private var currentMeetingID: UUID? {
-        currentMeetingIDString.isEmpty ? nil : UUID(uuidString: currentMeetingIDString)
-    }
-
     var selectedDate: Date {
         get { Date(timeIntervalSince1970: selectedDateTimestamp) }
         nonmutating set { selectedDateTimestamp = newValue.timeIntervalSince1970 }
@@ -75,39 +69,40 @@ struct TimesListView: View {
         return sorted
     }
 
+    // Number of locations that can actually be reordered (not anchored, not locked)
+    var reorderableCount: Int {
+        sortedLocations.filter { !$0.isLocked && $0.id != selectedLocationID }.count
+    }
+
     @AppStorage("locationSortMode") private var locationSortMode: String = "byLocalTime"
     @State private var listEditMode: EditMode = .inactive
     @AppStorage("showingCalendar") private var showingCalendar = false
     @State private var showingClearConfirmation = false
-    @State private var showingMeetingNamePrompt = false
+    @State private var showingSharePrompt = false
     @AppStorage("meetingName") private var meetingName = ""
-    @State private var showingSaveMeetingPrompt = false
-    @State private var showingOpenMeeting = false
-    @State private var savedScheduleText = ""
-    @State private var isLoadingMeeting = false  // Guard to suppress auto-save during loadMeeting()
-    @State private var autoSaveTask: Task<Void, Never>?  // Debounce timer for auto-save
 
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
                 // Header with meeting name, nav buttons
                 VStack(spacing: 0) {
-                    HStack {
+                    ZStack {
+                        VStack(spacing: 1) {
+                            Text("Meeting time zone:")
+                                .font(.caption)
+                                .foregroundColor(.pink)
+                            Text(selectedTimeZone.identifier.replacingOccurrences(of: "_", with: " "))
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.pink)
+                        }
+
+                        HStack {
                         Button(action: onBack) {
                             Image(systemName: "map")
                                 .font(.system(size: 32))
                         }
                         .buttonStyle(.plain)
-
-                        Spacer()
-
-                        // Active meeting name
-                        if currentMeetingID != nil && !meetingName.isEmpty {
-                            Text(meetingName)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
 
                         Spacer()
 
@@ -132,44 +127,21 @@ struct TimesListView: View {
                                 if locationSortMode == "manual" { Image(systemName: "checkmark") }
                             }
                         } label: {
-                            Image(systemName: locationSortMode == "manual" ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle")
+                            Image(systemName: locationSortMode == "manual" ? "arrow.up.arrow.down.circle" : "arrow.up.arrow.down.circle.fill")
                                 .font(.system(size: 32))
                         }
                         .buttonStyle(.plain)
 
-                        // Meeting menu (Save, Open, Clear)
-                        Menu {
-                            Button(action: {
-                                if currentMeetingID != nil {
-                                    autoSaveCurrentMeeting()
-                                } else {
-                                    meetingName = ""
-                                    showingMeetingNamePrompt = true
-                                }
-                            }) {
-                                Label("Save", systemImage: "square.and.arrow.down")
-                            }
-
-                            Button(action: {
-                                showingOpenMeeting = true
-                            }) {
-                                Label("Open", systemImage: "folder")
-                            }
-                            .disabled(meetingStorage.savedMeetings.isEmpty)
-
-                            Divider()
-
-                            Button(role: .destructive, action: {
-                                showingClearConfirmation = true
-                            }) {
-                                Label("Clear All", systemImage: "trash")
-                            }
-                            .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
-                        } label: {
-                            Image(systemName: "square.and.arrow.down")
+                        // Clear all button
+                        Button(action: {
+                            showingClearConfirmation = true
+                        }) {
+                            Image(systemName: "trash")
                                 .font(.system(size: 32))
                         }
                         .buttonStyle(.plain)
+                        .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)
+                        }
                     }
                     .padding(.horizontal)
                     .padding(.top, 12)
@@ -254,11 +226,11 @@ struct TimesListView: View {
                             .listRowBackground(
                                 RoundedRectangle(cornerRadius: 12)
                                     .fill(selectedLocationID == location.id
-                                          ? Color(red: 1.0, green: 0.9, blue: 0.95)
+                                          ? Color.accentColor.opacity(0.15)
                                           : Color(uiColor: .secondarySystemBackground))
                                     .padding(.horizontal, 16)
                             )
-                            .moveDisabled(location.isLocked || selectedLocationID == location.id)
+                            .moveDisabled(location.isLocked || selectedLocationID == location.id || reorderableCount < 2)
                             .deleteDisabled(true)
                         }
                         .onMove(perform: locationSortMode == "manual" ? { source, destination in
@@ -365,7 +337,7 @@ struct TimesListView: View {
 
                     // Share button
                     Button(action: {
-                        showingSaveMeetingPrompt = true
+                        showingSharePrompt = true
                     }) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 32))
@@ -375,24 +347,11 @@ struct TimesListView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
-                .background(Color.white)
+                .background(Color(uiColor: .systemBackground))
             }
         }
         .persistentSystemOverlays(.hidden)
-        .alert("Save Meeting", isPresented: $showingMeetingNamePrompt) {
-            TextField("Enter meeting name", text: $meetingName)
-                .textInputAutocapitalization(.words)
-            Button("Cancel", role: .cancel) {
-                meetingName = ""
-            }
-            Button("Save") {
-                saveMeeting()
-            }
-            .disabled(meetingName.isEmpty)
-        } message: {
-            Text("Enter a name for this meeting.")
-        }
-        .alert("Share Schedule", isPresented: $showingSaveMeetingPrompt) {
+        .alert("Share Schedule", isPresented: $showingSharePrompt) {
             TextField("Enter meeting name", text: $meetingName)
                 .textInputAutocapitalization(.words)
             Button("Cancel", role: .cancel) {
@@ -406,18 +365,9 @@ struct TimesListView: View {
         } message: {
             Text("Enter a name for this meeting to share the schedule.")
         }
-        .sheet(isPresented: $showingOpenMeeting) {
-            OpenMeetingView(meetingStorage: meetingStorage, currentMeetingID: currentMeetingID, onSelectMeeting: { meeting in
-                loadMeeting(meeting)
-            })
-        }
         .alert("Clear All Locations", isPresented: $showingClearConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Clear All", role: .destructive) {
-                // Dissociate from the active meeting (stop auto-saving)
-                currentMeetingIDString = ""
-                meetingName = ""
-
                 // Clear only unlocked saved locations
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     locationManager.savedLocations.removeAll { !$0.isLocked }
@@ -434,16 +384,6 @@ struct TimesListView: View {
             } else {
                 return Text("This will remove all saved locations and reset to your current local date and time.")
             }
-        }
-        // MARK: - Auto-save triggers (debounced, guarded)
-        .onChange(of: locationManager.savedLocations) { _, _ in
-            scheduleAutoSave()
-        }
-        .onChange(of: selectedDateTimestamp) { _, _ in
-            scheduleAutoSave()
-        }
-        .onChange(of: selectedLocationIDString) { _, _ in
-            scheduleAutoSave()
         }
     }
 
@@ -520,82 +460,5 @@ struct TimesListView: View {
             rootVC.present(activityController, animated: true)
         }
 
-        // After sharing, ask if they want to save
-        savedScheduleText = scheduleText
-        showingSaveMeetingPrompt = true
-    }
-
-    func saveMeeting() {
-        let meeting = SavedMeeting(
-            name: meetingName,
-            locations: locationManager.savedLocations,
-            selectedLocationID: selectedLocationIDString,
-            dateTimestamp: selectedDateTimestamp
-        )
-        meetingStorage.saveMeeting(meeting)
-        // Start tracking this new meeting for auto-save
-        currentMeetingIDString = meeting.id.uuidString
-    }
-
-    /// Debounce auto-save: coalesces rapid changes (e.g. loadMeeting setting 3 properties) into one save
-    func scheduleAutoSave() {
-        guard !isLoadingMeeting else { return }  // Don't auto-save while restoring a meeting
-        autoSaveTask?.cancel()
-        autoSaveTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            autoSaveCurrentMeeting()
-        }
-    }
-
-    /// Auto-save current state back to the active meeting (silent, no prompts)
-    func autoSaveCurrentMeeting() {
-        guard !isLoadingMeeting else { return }
-        guard let id = currentMeetingID else { return }
-        // Only auto-save if the meeting still exists in storage
-        guard meetingStorage.savedMeetings.contains(where: { $0.id == id }) else {
-            currentMeetingIDString = ""
-            return
-        }
-        let meeting = SavedMeeting(
-            id: id,
-            name: meetingName,
-            locations: locationManager.savedLocations,
-            selectedLocationID: selectedLocationIDString,
-            dateTimestamp: selectedDateTimestamp
-        )
-        meetingStorage.saveMeeting(meeting)
-    }
-
-    func loadMeeting(_ meeting: SavedMeeting) {
-        // Suppress auto-save while restoring state (prevents recursive save loop)
-        isLoadingMeeting = true
-
-        // Track which meeting we're editing
-        currentMeetingIDString = meeting.id.uuidString
-
-        // Restore the locations (sorted by timezone offset)
-        locationManager.setLocationsSorted(meeting.locations)
-
-        // Restore the selected location
-        if !meeting.selectedLocationID.isEmpty {
-            if let selectedUUID = UUID(uuidString: meeting.selectedLocationID),
-               meeting.locations.contains(where: { $0.id == selectedUUID }) {
-                selectedLocationIDString = meeting.selectedLocationID
-            } else {
-                selectedLocationIDString = ""
-            }
-        } else {
-            selectedLocationIDString = ""
-        }
-
-        // Restore the date
-        selectedDate = Date(timeIntervalSince1970: meeting.dateTimestamp)
-
-        // Restore the meeting name
-        meetingName = meeting.name
-
-        // Re-enable auto-save after state is fully restored
-        isLoadingMeeting = false
     }
 }
