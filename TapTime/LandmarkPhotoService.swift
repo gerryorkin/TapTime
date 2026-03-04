@@ -10,8 +10,29 @@ internal import Combine
 final class LandmarkPhotoService: ObservableObject {
     static let shared = LandmarkPhotoService()
 
+    /// Incremented on cache clear so views can re-trigger loads
+    @Published var cacheVersion: Int = 0
+
     /// In-memory cache: country slug -> UIImage
     private var memoryCache: [String: UIImage] = [:]
+
+    private init() {
+        preloadDiskCache()
+    }
+
+    /// Load all disk-cached photos into memory at launch for instant display.
+    private func preloadDiskCache() {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) else { return }
+        for file in files where file.pathExtension == "jpg" {
+            let slug = file.deletingPathExtension().lastPathComponent
+            if let image = UIImage(contentsOfFile: file.path) {
+                memoryCache[slug] = image
+            }
+        }
+        #if DEBUG
+        print("[LandmarkPhoto] Preloaded \(memoryCache.count) photos from disk")
+        #endif
+    }
 
     /// Track in-flight requests to avoid duplicate fetches
     private var inFlightRequests: Set<String> = []
@@ -36,7 +57,7 @@ final class LandmarkPhotoService: ObservableObject {
         if let files = try? FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) {
             for file in files { try? FileManager.default.removeItem(at: file) }
         }
-        objectWillChange.send()
+        cacheVersion += 1
         print("[LandmarkPhoto] Cache cleared")
     }
 
@@ -120,7 +141,7 @@ final class LandmarkPhotoService: ObservableObject {
                 : ""
         }
 
-        let queryParts = [city, country, "skyline cityscape landmark"].filter { !$0.isEmpty }
+        let queryParts = [city, "panorama"].filter { !$0.isEmpty }
         let query = queryParts.joined(separator: " ")
         let slugParts = [country, city].filter { !$0.isEmpty }
         let slug = Self.slug(for: slugParts.joined(separator: "_"))
@@ -153,7 +174,7 @@ final class LandmarkPhotoService: ObservableObject {
     private func fetchFromPexels(query: String, slug: String) async -> UIImage? {
         let query = query
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        guard let url = URL(string: "\(PexelsConfig.baseURL)/search?query=\(query)&per_page=1&orientation=landscape") else {
+        guard let url = URL(string: "\(PexelsConfig.baseURL)/search?query=\(query)&per_page=10&orientation=landscape") else {
             return nil
         }
 
@@ -168,8 +189,9 @@ final class LandmarkPhotoService: ObservableObject {
             // Parse JSON — we only need src.landscape from the first photo
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             guard let photos = json?["photos"] as? [[String: Any]],
-                  let firstPhoto = photos.first,
-                  let src = firstPhoto["src"] as? [String: String],
+                  !photos.isEmpty,
+                  let selectedPhoto = photos.randomElement(),
+                  let src = selectedPhoto["src"] as? [String: String],
                   let imageURLString = src["landscape"],
                   let imageURL = URL(string: imageURLString) else { return nil }
 

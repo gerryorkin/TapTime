@@ -79,6 +79,14 @@ struct CompactTimeCard: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    private var useWhiteText: Bool {
+        false
+    }
+
+    private var useBlackSecondary: Bool {
+        false
+    }
+
     @State private var offset: CGFloat = 0
     @State private var isSwiping = false
     @State private var isThresholdReached = false
@@ -111,24 +119,31 @@ struct CompactTimeCard: View {
                     Text((parts.first.map(String.init) ?? title).replacingOccurrences(of: "_", with: " "))
                         .font(.title3)
                         .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .foregroundColor(useWhiteText ? .white : .primary)
                         .lineLimit(1)
                     // Second line: city if available, invisible spacer for consistent height
                     if parts.count > 1 {
                         Text(parts[1].replacingOccurrences(of: "_", with: " "))
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(useWhiteText ? .white.opacity(0.8) : useBlackSecondary ? .black : .secondary)
                             .lineLimit(1)
                     } else if isUserLocation {
                         Text(timeZone.identifier.replacingOccurrences(of: "_", with: " "))
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(useWhiteText ? .white.opacity(0.8) : useBlackSecondary ? .black : .secondary)
                             .lineLimit(1)
                     } else {
                         Text(" ")
                             .font(.subheadline)
+                    }
+                }
+                .background {
+                    if backgroundStyle == "map" && fullToneBackground {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(.ultraThinMaterial.opacity(0.5))
+                            .padding(-4)
                     }
                 }
 
@@ -139,23 +154,30 @@ struct CompactTimeCard: View {
                     Text(formattedTime())
                         .font(.system(.title3, design: .rounded))
                         .fontWeight(.bold)
-                        .foregroundColor(.primary)
+                        .foregroundColor(useWhiteText ? .white : .primary)
                         .monospacedDigit()
                         .fixedSize(horizontal: true, vertical: false)
 
                     Text(formattedDate())
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(useWhiteText ? .white.opacity(0.8) : useBlackSecondary ? .black : .secondary)
                         .fixedSize(horizontal: true, vertical: false)
 
                     if !isUserLocation {
                         Text(timeDifference())
                             .font(.caption)
-                            .foregroundColor(.blue)
+                            .foregroundColor(useWhiteText ? .white.opacity(0.8) : useBlackSecondary ? .black : .blue)
                             .fixedSize(horizontal: true, vertical: false)
                     } else {
                         Text(" ")
                             .font(.caption)
+                    }
+                }
+                .background {
+                    if backgroundStyle == "map" && fullToneBackground {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(.ultraThinMaterial.opacity(0.5))
+                            .padding(-4)
                     }
                 }
             }
@@ -173,18 +195,19 @@ struct CompactTimeCard: View {
                     switch backgroundStyle {
                     case "photos":
                         LandmarkPhotoView(locationName: title, timeZone: timeZone)
+                            .id(photoService.cacheVersion)
                     case "map":
                         if let image = mapService.snapshot(forSlug: mapSlug) {
                             Image(uiImage: image)
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .opacity(fullToneBackground ? 1.0 : 0.3)
+                                .opacity(fullToneBackground ? 0.85 : (colorScheme == .dark ? 0.5 : 0.35))
                         }
                     case "flag":
                         if !isUserLocation, let flag = countryFlag {
                             Text(flag)
-                                .font(.system(size: 96))
-                                .opacity(fullToneBackground ? 1.0 : 0.15)
+                                .font(.system(size: 77))
+                                .opacity(fullToneBackground ? 1.0 : (colorScheme == .dark ? 1.0 : 0.15))
                                 .frame(maxWidth: .infinity)
                         }
                     default:
@@ -224,8 +247,13 @@ struct CompactTimeCard: View {
                     .padding(6)
                 }
             }
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(uiColor: .secondarySystemBackground))
+            )
             .cornerRadius(12)
             .clipped()
+            .contentShape(.dragPreview, RoundedRectangle(cornerRadius: 12))
             .offset(x: offset)
             .contentShape(Rectangle())
             .onTapGesture {
@@ -336,6 +364,14 @@ struct CompactTimeCard: View {
                 }
             default:
                 break
+            }
+        }
+        .onChange(of: photoService.cacheVersion) { _, _ in
+            if backgroundStyle == "photos" {
+                let info = LandmarkPhotoService.searchInfo(from: title, timeZone: timeZone)
+                if !info.query.isEmpty {
+                    photoService.loadPhoto(query: info.query, slug: info.slug)
+                }
             }
         }
         .alert("Delete Location", isPresented: $showingDeleteConfirmation) {

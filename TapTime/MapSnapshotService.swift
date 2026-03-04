@@ -15,6 +15,24 @@ final class MapSnapshotService: ObservableObject {
     /// In-memory cache: slug -> UIImage
     private var memoryCache: [String: UIImage] = [:]
 
+    private init() {
+        preloadDiskCache()
+    }
+
+    /// Load all disk-cached snapshots into memory at launch for instant display.
+    private func preloadDiskCache() {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) else { return }
+        for file in files where file.pathExtension == "png" {
+            let slug = file.deletingPathExtension().lastPathComponent
+            if let image = UIImage(contentsOfFile: file.path) {
+                memoryCache[slug] = image
+            }
+        }
+        #if DEBUG
+        print("[MapSnapshot] Preloaded \(memoryCache.count) snapshots from disk")
+        #endif
+    }
+
     /// Track in-flight requests to avoid duplicate fetches
     private var inFlightRequests: Set<String> = []
 
@@ -84,8 +102,18 @@ final class MapSnapshotService: ObservableObject {
             // Geocode the city name for a proper center
             let center = await geocodeCity(locationName: item.locationName, timeZone: item.timeZone) ?? item.fallback
 
+            // Determine city name length for zoom level
+            let cityName: String
+            if item.locationName == "Your location" {
+                let tzParts = item.timeZone.identifier.split(separator: "/")
+                cityName = tzParts.count >= 2 ? String(tzParts.last!).replacingOccurrences(of: "_", with: " ") : ""
+            } else {
+                let parts = item.locationName.split(separator: "/", maxSplits: 1)
+                cityName = parts.count > 1 ? String(parts[1]).replacingOccurrences(of: "_", with: " ") : ""
+            }
+
             // Generate snapshot
-            if let snapshotImage = await generateSnapshot(coordinate: center) {
+            if let snapshotImage = await generateSnapshot(coordinate: center, wideZoom: cityName.count >= 10) {
                 memoryCache[item.slug] = snapshotImage
                 saveToDisk(image: snapshotImage, slug: item.slug)
                 objectWillChange.send()
@@ -151,11 +179,12 @@ final class MapSnapshotService: ObservableObject {
         }
     }
 
-    private func generateSnapshot(coordinate: CLLocationCoordinate2D) async -> UIImage? {
+    private func generateSnapshot(coordinate: CLLocationCoordinate2D, wideZoom: Bool = false) async -> UIImage? {
+        let span = wideZoom ? 0.35 : 0.15
         let options = MKMapSnapshotter.Options()
         options.region = MKCoordinateRegion(
             center: coordinate,
-            span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+            span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)
         )
         options.size = CGSize(width: 600, height: 200)
         options.mapType = .standard

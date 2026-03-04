@@ -102,13 +102,13 @@ struct TimesListView: View {
                         HStack {
                         Button(action: onBack) {
                             Image(systemName: "map")
-                                .font(.system(size: 32))
+                                .font(.system(size: 22))
                         }
                         .buttonStyle(.plain)
 
                         Button(action: { showingSettings = true }) {
                             Image(systemName: "gearshape")
-                                .font(.system(size: 32))
+                                .font(.system(size: 22))
                         }
                         .buttonStyle(.plain)
 
@@ -136,7 +136,7 @@ struct TimesListView: View {
                             }
                         } label: {
                             Image(systemName: locationSortMode == "manual" ? "arrow.up.arrow.down.circle" : "arrow.up.arrow.down.circle.fill")
-                                .font(.system(size: 32))
+                                .font(.system(size: 22))
                         }
                         .buttonStyle(.plain)
 
@@ -145,7 +145,7 @@ struct TimesListView: View {
                             showingClearConfirmation = true
                         }) {
                             Image(systemName: "trash")
-                                .font(.system(size: 32))
+                                .font(.system(size: 22))
                         }
                         .buttonStyle(.plain)
                         .disabled(locationManager.savedLocations.filter { !$0.isLocked }.isEmpty)

@@ -30,7 +30,7 @@ struct SettingsView: View {
 
                 Section {
                     Picker("Row Background", selection: $backgroundStyle) {
-                        Text("Landmark Photos").tag("photos")
+                        Text("Photos").tag("photos")
                         Text("Map").tag("map")
                         Text("Flag").tag("flag")
                         Text("None").tag("none")
@@ -51,7 +51,7 @@ struct SettingsView: View {
                             Label("Refresh Maps", systemImage: "arrow.clockwise")
                         }
                     }
-                    if backgroundStyle != "none" {
+                    if backgroundStyle != "none" && backgroundStyle != "photos" {
                         Toggle("Full Tone", isOn: $fullToneBackground)
                     }
                 } header: {
