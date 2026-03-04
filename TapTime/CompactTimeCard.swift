@@ -130,12 +130,16 @@ struct CompactTimeCard: View {
             }
 
             // Main card content
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 // Location name - country on first line, city on second line
                 VStack(alignment: .leading, spacing: 1) {
                     let parts = title.split(separator: "/", maxSplits: 1)
                     // First line: always just the country
-                    Text((parts.first.map(String.init) ?? title).replacingOccurrences(of: "_", with: " "))
+                    let country = (parts.first.map(String.init) ?? title)
+                        .replacingOccurrences(of: "_", with: " ")
+                        .replacingOccurrences(of: "United States", with: "USA")
+                        .replacingOccurrences(of: "United Kingdom", with: "UK")
+                    Text(country)
                         .font(.title3)
                         .fontWeight(.semibold)
                         .foregroundColor(locationTextColor)
@@ -156,6 +160,17 @@ struct CompactTimeCard: View {
                     } else {
                         Text(" ")
                             .font(.subheadline)
+                    }
+                    if isSelected {
+                        ZStack {
+                            Circle()
+                                .fill(.white)
+                                .frame(width: 22, height: 22)
+                                .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+                            Text("⚓")
+                                .font(.system(size: 11))
+                        }
+                        .padding(.top, 2)
                     }
                 }
 
@@ -188,7 +203,7 @@ struct CompactTimeCard: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 16)
+                        .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 ZStack {
@@ -221,9 +236,10 @@ struct CompactTimeCard: View {
                     case "flag":
                         if !isUserLocation, let flag = countryFlag {
                             Text(flag)
-                                .font(.system(size: 77))
-                                .opacity(fullToneBackground ? 1.0 : (colorScheme == .dark ? 1.0 : 0.15))
+                                .font(.system(size: 73))
+                                .opacity(0.8)
                                 .frame(maxWidth: .infinity)
+                                .offset(x: -1, y: -8)
                         }
                     default:
                         EmptyView()
@@ -257,19 +273,6 @@ struct CompactTimeCard: View {
                 }
                 .padding(6)
                 .hidden()
-            }
-            .overlay(alignment: .topLeading) {
-                if isSelected {
-                    ZStack {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 18, height: 18)
-                            .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
-                        Text("⚓")
-                            .font(.system(size: 9))
-                    }
-                    .padding(6)
-                }
             }
             .background(
                 RoundedRectangle(cornerRadius: 12)
