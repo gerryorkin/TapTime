@@ -14,8 +14,9 @@ struct SettingsView: View {
     // Pill appearance properties kept for future use
     @AppStorage("pillOpacity") private var pillOpacity: Double = 0.9
     @AppStorage("pillColorData") private var pillColorData: Data = defaultPillColorData
-    @AppStorage("APP_backgroundStyle") private var backgroundStyle: String = "photos"
-    @AppStorage("APP_fullToneBackground") private var fullToneBackground: Bool = false
+    @AppStorage("APP_backgroundStyle") private var backgroundStyle: String = "map"
+    @AppStorage("APP_fullToneBackground") private var fullToneBackground: Bool = true
+    @AppStorage("APP_invertMaps") private var invertMaps: Bool = true
 
     var body: some View {
         NavigationView {
@@ -51,15 +52,16 @@ struct SettingsView: View {
                             Label("Refresh Maps", systemImage: "arrow.clockwise")
                         }
                     }
-                    if backgroundStyle != "none" && backgroundStyle != "photos" {
+                    if backgroundStyle == "map" {
+                        Toggle("Invert Maps", isOn: $invertMaps)
+                    }
+                    if backgroundStyle != "none" {
                         Toggle("Full Tone", isOn: $fullToneBackground)
                     }
                 } header: {
                     Text("Row Background")
                 } footer: {
-                    Text(fullToneBackground && backgroundStyle != "none"
-                         ? "Background images shown at full intensity"
-                         : "Choose what to show behind each location row")
+                    Text("Choose what to show behind each location row")
                 }
 
                 Section {

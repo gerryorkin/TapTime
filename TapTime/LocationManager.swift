@@ -33,7 +33,7 @@ nonisolated enum CountryData {
         map["usa"] = "US"; map["us"] = "US"
         map["uk"] = "GB"; map["england"] = "GB"; map["britain"] = "GB"; map["great britain"] = "GB"
         map["uae"] = "AE"; map["south korea"] = "KR"; map["north korea"] = "KP"
-        map["russia"] = "RU"; map["nz"] = "NZ"
+        map["russia"] = "RU"; map["nz"] = "NZ"; map["china"] = "CN"
         return map
     }()
 

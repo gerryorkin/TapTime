@@ -180,7 +180,7 @@ final class MapSnapshotService: ObservableObject {
     }
 
     private func generateSnapshot(coordinate: CLLocationCoordinate2D, wideZoom: Bool = false) async -> UIImage? {
-        let span = wideZoom ? 0.35 : 0.15
+        let span = wideZoom ? 0.45 : 0.18
         let options = MKMapSnapshotter.Options()
         options.region = MKCoordinateRegion(
             center: coordinate,

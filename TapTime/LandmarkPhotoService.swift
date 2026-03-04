@@ -141,7 +141,7 @@ final class LandmarkPhotoService: ObservableObject {
                 : ""
         }
 
-        let queryParts = [city, "panorama"].filter { !$0.isEmpty }
+        let queryParts = [city, "cityscape panorama"].filter { !$0.isEmpty }
         let query = queryParts.joined(separator: " ")
         let slugParts = [country, city].filter { !$0.isEmpty }
         let slug = Self.slug(for: slugParts.joined(separator: "_"))
