@@ -80,6 +80,7 @@ struct TimesListView: View {
     @State private var showingClearConfirmation = false
     @State private var showingSharePrompt = false
     @State private var showingSettings = false
+    @State private var showingTimeline = false
     @AppStorage("useLargePills") private var useLargePills = false
     @AppStorage("meetingName") private var meetingName = ""
 
@@ -108,6 +109,12 @@ struct TimesListView: View {
 
                         Button(action: { showingSettings = true }) {
                             Image(systemName: "gearshape")
+                                .font(.system(size: 22))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { showingTimeline = true }) {
+                            Image(systemName: "chart.bar.xaxis")
                                 .font(.system(size: 22))
                         }
                         .buttonStyle(.plain)
@@ -394,6 +401,9 @@ struct TimesListView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(useLargePills: $useLargePills)
+        }
+        .fullScreenCover(isPresented: $showingTimeline) {
+            TimelineComparisonView(locationManager: locationManager)
         }
     }
 

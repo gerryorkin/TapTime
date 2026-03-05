@@ -81,7 +81,8 @@ struct CompactTimeCard: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var textColor: Color {
-        (backgroundStyle == "map" || backgroundStyle == "photos") ? .black : .primary
+        if backgroundStyle == "map" || backgroundStyle == "photos" { return .black }
+        return .primary
     }
 
     private var locationTextColor: Color {
@@ -99,11 +100,13 @@ struct CompactTimeCard: View {
     }
 
     private var secondaryTextColor: Color {
-        (backgroundStyle == "map" || backgroundStyle == "photos") ? .black : .secondary
+        if backgroundStyle == "map" || backgroundStyle == "photos" { return .black }
+        return .secondary
     }
 
     private var diffTextColor: Color {
-        (backgroundStyle == "map" || backgroundStyle == "photos") ? .black : .blue
+        if backgroundStyle == "map" || backgroundStyle == "photos" { return .black }
+        return .blue
     }
 
     @State private var offset: CGFloat = 0
