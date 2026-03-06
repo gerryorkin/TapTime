@@ -118,6 +118,7 @@ struct TimesListView: View {
                                 .font(.system(size: 22))
                         }
                         .buttonStyle(.plain)
+                        .hidden()
 
                         Spacer()
 
@@ -182,6 +183,7 @@ struct TimesListView: View {
                 ScrollViewReader { scrollProxy in
                     List {
                         // User's location — shown first when nothing is selected
+                        let paletteTotal = sortedLocations.count + 1
                         if selectedLocationID == nil {
                             CompactTimeCard(
                                 title: "Your location",
@@ -197,7 +199,9 @@ struct TimesListView: View {
                                     selectedLocationIDString = ""
                                     selectedDate = Date()
                                 },
-                                onToggleLock: nil
+                                onToggleLock: nil,
+                                rowIndex: 0,
+                                totalRows: paletteTotal
                             )
                             .padding(.horizontal, 16)
                             .id("your-location-selected")
@@ -209,7 +213,7 @@ struct TimesListView: View {
                         }
 
                         // All saved locations
-                        ForEach(sortedLocations) { location in
+                        ForEach(Array(sortedLocations.enumerated()), id: \.element.id) { index, location in
                             CompactTimeCard(
                                 title: location.locationName,
                                 timeZone: location.timeZone,
@@ -233,7 +237,9 @@ struct TimesListView: View {
                                 },
                                 onToggleLock: {
                                     locationManager.toggleLock(for: location.id)
-                                }
+                                },
+                                rowIndex: index + (selectedLocationID == nil ? 1 : 0),
+                                totalRows: paletteTotal
                             )
                             .compositingGroup()
                             .padding(.horizontal, 16)
@@ -266,7 +272,9 @@ struct TimesListView: View {
                                     selectedLocationIDString = ""
                                     selectedDate = Date()
                                 },
-                                onToggleLock: nil
+                                onToggleLock: nil,
+                                rowIndex: sortedLocations.count,
+                                totalRows: paletteTotal
                             )
                             .padding(.horizontal, 16)
                             .id("your-location-unselected")
@@ -280,6 +288,8 @@ struct TimesListView: View {
                     .listRowSpacing(12)
                     .contentMargins(.top, 8)
                     .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemBackground))
                     .environment(\.editMode, $listEditMode)
                     // Only animate row reordering in byLocalTime mode; in manual mode the
                     // native drag-to-reorder animation handles it and extra animation causes revert.

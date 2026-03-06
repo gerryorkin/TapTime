@@ -20,6 +20,8 @@ struct CompactTimeCard: View {
     let onDelete: (() -> Void)?
     let onTap: () -> Void
     let onToggleLock: (() -> Void)?
+    var rowIndex: Int = 0
+    var totalRows: Int = 1
     
     // Reusable date formatters to reduce allocations
     private static let timeFormatter: DateFormatter = {
@@ -36,18 +38,68 @@ struct CompactTimeCard: View {
         return formatter
     }()
 
+    private var tzAbbrev: String {
+        // Use abbreviation if it's a real name (e.g. AEDT, PST), otherwise GMT offset
+        if let abbrev = timeZone.abbreviation(for: selectedDate),
+           !abbrev.hasPrefix("GMT"), !abbrev.hasPrefix("+"), !abbrev.hasPrefix("-") {
+            return abbrev
+        }
+        let secs = timeZone.secondsFromGMT(for: selectedDate)
+        if secs == 0 { return "GMT" }
+        let h = secs / 3600
+        let m = abs(secs % 3600) / 60
+        if m == 0 {
+            return "GMT\(h > 0 ? "+" : "")\(h)"
+        } else {
+            return "GMT\(secs > 0 ? "+" : "-")\(abs(h)):\(String(format: "%02d", m))"
+        }
+    }
+
+
     @ObservedObject private var photoService = LandmarkPhotoService.shared
     @ObservedObject private var mapService = MapSnapshotService.shared
     @AppStorage("APP_backgroundStyle") private var backgroundStyle: String = "map"
     @AppStorage("APP_fullToneBackground") private var fullToneBackground: Bool = true
-    @AppStorage("APP_invertMaps") private var invertMaps: Bool = true
+    @AppStorage("APP_mapEffect") private var mapEffect: String = "invert"
+    @AppStorage("APP_mapStyle") private var mapStyle: String = "muted"
+    @AppStorage("APP_mapLocationLabel") private var mapLocationLabel: String = "hidden"
+    @AppStorage("APP_tintColorData") private var tintColorData: Data = defaultTintColorData
+    @AppStorage("APP_tintPalette") private var tintPalette: Bool = false
+
+    private var tintColor: Color { Color(fromData: tintColorData) }
+
+    /// When palette mode is on, rotate the seed colour's hue evenly across the list.
+    private var rowTintColor: Color {
+        guard tintPalette, totalRows > 1 else { return tintColor }
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(tintColor).getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        let rotation = CGFloat(rowIndex) / CGFloat(totalRows)
+        let newHue = (h + rotation).truncatingRemainder(dividingBy: 1.0)
+        return Color(hue: Double(newHue), saturation: Double(s), brightness: Double(b), opacity: Double(a))
+    }
 
     private var photoSlug: String {
         LandmarkPhotoService.searchInfo(from: title, timeZone: timeZone).slug
     }
 
+    private var mapShiftSouth: Bool {
+        let country: String
+        if isUserLocation || title == "Your location" {
+            if let code = CountryData.timeZoneToCountryCode[timeZone.identifier] {
+                let locale = NSLocale(localeIdentifier: "en_US")
+                country = locale.displayName(forKey: .countryCode, value: code) ?? ""
+            } else {
+                country = ""
+            }
+        } else {
+            let parts = title.split(separator: "/", maxSplits: 1)
+            country = (parts.first.map(String.init) ?? title).replacingOccurrences(of: "_", with: " ")
+        }
+        return country.count > 9
+    }
+
     private var mapSlug: String {
-        MapSnapshotService.slug(for: title, timeZone: timeZone)
+        MapSnapshotService.slug(for: title, timeZone: timeZone, shiftSouth: mapShiftSouth)
     }
 
     private var countryFlag: String? {
@@ -85,16 +137,19 @@ struct CompactTimeCard: View {
         return .primary
     }
 
+    /// Whether the current map effect produces a dark background that needs white text.
+    private var mapEffectIsDark: Bool {
+        ["invert", "grayscale", "tint", "hueRotate"].contains(mapEffect)
+    }
+
     private var locationTextColor: Color {
-        if backgroundStyle == "map" && invertMaps && fullToneBackground { return .white }
-        if backgroundStyle == "photos" && fullToneBackground { return .white }
+        if backgroundStyle == "map" && mapEffectIsDark && fullToneBackground { return .white }
         if backgroundStyle == "map" || backgroundStyle == "photos" { return .black }
         return .primary
     }
 
     private var locationSecondaryTextColor: Color {
-        if backgroundStyle == "map" && invertMaps && fullToneBackground { return .white.opacity(0.8) }
-        if backgroundStyle == "photos" && fullToneBackground { return .white.opacity(0.8) }
+        if backgroundStyle == "map" && mapEffectIsDark && fullToneBackground { return .white.opacity(0.8) }
         if backgroundStyle == "map" || backgroundStyle == "photos" { return .black }
         return .secondary
     }
@@ -108,6 +163,7 @@ struct CompactTimeCard: View {
         if backgroundStyle == "map" || backgroundStyle == "photos" { return .black }
         return .blue
     }
+
 
     @State private var offset: CGFloat = 0
     @State private var isSwiping = false
@@ -142,32 +198,38 @@ struct CompactTimeCard: View {
                         .replacingOccurrences(of: "_", with: " ")
                         .replacingOccurrences(of: "United States", with: "USA")
                         .replacingOccurrences(of: "United Kingdom", with: "UK")
-                    Text(country)
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundColor(locationTextColor)
-                        .lineLimit(1)
-                    // Second line: city if available, invisible spacer for consistent height
-                    if parts.count > 1 {
-                        Text(parts[1].replacingOccurrences(of: "_", with: " "))
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(locationSecondaryTextColor)
+                    let showLocationOnMap = backgroundStyle == "map" && mapLocationLabel != "hidden"
+                    let mapLabelColor: Color = mapLocationLabel == "white" ? .white : .black
+                    if backgroundStyle != "map" || showLocationOnMap {
+                        Text(country)
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundColor(showLocationOnMap ? mapLabelColor : locationTextColor)
                             .lineLimit(1)
-                    } else if isUserLocation {
-                        Text(timeZone.identifier.replacingOccurrences(of: "_", with: " "))
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(locationSecondaryTextColor)
-                            .lineLimit(1)
-                    } else {
-                        Text(" ")
-                            .font(.subheadline)
+                    }
+                    // Second line: city if available (not shown on map rows)
+                    if backgroundStyle != "map" {
+                        if parts.count > 1 {
+                            Text(parts[1].replacingOccurrences(of: "_", with: " "))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(showLocationOnMap ? mapLabelColor.opacity(0.8) : locationSecondaryTextColor)
+                                .lineLimit(1)
+                        } else if isUserLocation {
+                            Text(timeZone.identifier.replacingOccurrences(of: "_", with: " "))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(showLocationOnMap ? mapLabelColor.opacity(0.8) : locationSecondaryTextColor)
+                                .lineLimit(1)
+                        } else {
+                            Text(" ")
+                                .font(.subheadline)
+                        }
                     }
                     if isSelected {
                         ZStack {
                             Circle()
-                                .fill(.white)
+                                .fill(Color(.systemBackground))
                                 .frame(width: 22, height: 22)
                                 .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
                             Text("⚓")
@@ -176,10 +238,20 @@ struct CompactTimeCard: View {
                         .padding(.top, 2)
                     }
                 }
+                .padding(.horizontal, backgroundStyle == "photos" ? 8 : 0)
+                .padding(.vertical, backgroundStyle == "photos" ? 4 : 0)
+                .background(
+                    Group {
+                        if backgroundStyle == "photos" {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.55))
+                        }
+                    }
+                )
 
                 Spacer(minLength: 8)
 
-                // Time, date, and hours difference - fixed size to prevent wrapping
+                // Time, date, and timezone info
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(formattedTime())
                         .font(.system(.title3, design: .rounded))
@@ -194,15 +266,10 @@ struct CompactTimeCard: View {
                         .foregroundColor(secondaryTextColor)
                         .fixedSize(horizontal: true, vertical: false)
 
-                    if !isUserLocation {
-                        Text(timeDifference())
-                            .font(.caption)
-                            .foregroundColor(diffTextColor)
-                            .fixedSize(horizontal: true, vertical: false)
-                    } else {
-                        Text(" ")
-                            .font(.caption)
-                    }
+                    Text(tzAbbrev)
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(secondaryTextColor)
                 }
             }
             .padding(.horizontal, 16)
@@ -222,25 +289,40 @@ struct CompactTimeCard: View {
                             .id(photoService.cacheVersion)
                     case "map":
                         if let image = mapService.snapshot(forSlug: mapSlug) {
-                            let mapOpacity = fullToneBackground ? 0.85 : (colorScheme == .dark ? 0.5 : 0.35)
-                            if invertMaps {
-                                Image(uiImage: image)
+                            let mapOpacity = fullToneBackground ? 1.0 : (colorScheme == .dark ? 0.5 : (mapEffectIsDark ? 0.35 : 0.5))
+                            GeometryReader { geo in
+                                let baseImage = Image(uiImage: image)
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
-                                    .colorInvert()
+                                    .frame(width: geo.size.width, height: geo.size.height)
+                                    .saturation(1.5)
+                                    .contrast(1.2)
                                     .opacity(mapOpacity)
-                            } else {
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .opacity(mapOpacity)
+                                switch mapEffect {
+                                case "invert":
+                                    baseImage.colorInvert()
+                                case "grayscale":
+                                    baseImage.grayscale(1.0)
+                                case "sepia":
+                                    baseImage.grayscale(1.0)
+                                        .colorMultiply(Color(red: 0.9, green: 0.8, blue: 0.65))
+                                case "hueRotate":
+                                    baseImage.hueRotation(.degrees(180))
+                                case "tint":
+                                    baseImage.grayscale(0.8)
+                                        .colorMultiply(rowTintColor)
+                                case "blur":
+                                    baseImage.blur(radius: 3)
+                                default:
+                                    baseImage
+                                }
                             }
+                            .clipped()
                         }
                     case "flag":
                         if !isUserLocation, let flag = countryFlag {
                             Text(flag)
                                 .font(.system(size: 73))
-                                .opacity(0.8)
                                 .frame(maxWidth: .infinity)
                                 .offset(x: -1, y: -8)
                         }
@@ -252,7 +334,7 @@ struct CompactTimeCard: View {
                     if backgroundStyle == "map" || backgroundStyle == "photos" {
                         HStack(spacing: 0) {
                             Spacer()
-                            Color.white.opacity(0.5)
+                            Color.white.opacity(0.55)
                                 .frame(width: 140)
                         }
                     }
@@ -364,6 +446,20 @@ struct CompactTimeCard: View {
                 UserDefaults.standard.removeObject(forKey: "APP_showLandmarkPhotos")
             }
 
+            // One-time migration: APP_invertMaps (Bool) -> APP_mapEffect (String)
+            if UserDefaults.standard.object(forKey: "APP_invertMaps") != nil {
+                let wasInverted = UserDefaults.standard.bool(forKey: "APP_invertMaps")
+                mapEffect = wasInverted ? "invert" : "none"
+                UserDefaults.standard.removeObject(forKey: "APP_invertMaps")
+            }
+
+            // One-time migration: APP_mapMuted (Bool) -> APP_mapStyle (String)
+            if UserDefaults.standard.object(forKey: "APP_mapMuted") != nil {
+                let wasMuted = UserDefaults.standard.bool(forKey: "APP_mapMuted")
+                mapStyle = wasMuted ? "muted" : "standard"
+                UserDefaults.standard.removeObject(forKey: "APP_mapMuted")
+            }
+
             // Trigger background load based on style
             switch backgroundStyle {
             case "photos":
@@ -373,8 +469,8 @@ struct CompactTimeCard: View {
                 }
             case "map":
                 if let coord = coordinate {
-                    let slug = MapSnapshotService.slug(for: title, timeZone: timeZone)
-                    mapService.loadSnapshot(locationName: title, timeZone: timeZone, fallbackCoordinate: coord, slug: slug)
+                    let slug = MapSnapshotService.slug(for: title, timeZone: timeZone, shiftSouth: mapShiftSouth)
+                    mapService.loadSnapshot(locationName: title, timeZone: timeZone, fallbackCoordinate: coord, slug: slug, shiftSouth: mapShiftSouth)
                 }
             default:
                 break
@@ -389,11 +485,17 @@ struct CompactTimeCard: View {
                 }
             case "map":
                 if let coord = coordinate {
-                    let slug = MapSnapshotService.slug(for: title, timeZone: timeZone)
-                    mapService.loadSnapshot(locationName: title, timeZone: timeZone, fallbackCoordinate: coord, slug: slug)
+                    let slug = MapSnapshotService.slug(for: title, timeZone: timeZone, shiftSouth: mapShiftSouth)
+                    mapService.loadSnapshot(locationName: title, timeZone: timeZone, fallbackCoordinate: coord, slug: slug, shiftSouth: mapShiftSouth)
                 }
             default:
                 break
+            }
+        }
+        .onChange(of: mapStyle) { _, _ in
+            if backgroundStyle == "map", let coord = coordinate {
+                let slug = MapSnapshotService.slug(for: title, timeZone: timeZone, shiftSouth: mapShiftSouth)
+                mapService.loadSnapshot(locationName: title, timeZone: timeZone, fallbackCoordinate: coord, slug: slug, shiftSouth: mapShiftSouth)
             }
         }
         .onChange(of: photoService.cacheVersion) { _, _ in

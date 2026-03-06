@@ -88,8 +88,8 @@ struct FloatingLocationCard: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                     .frame(width: cardWidth)
-                    .foregroundColor(.black)
-                    .background(Color.white)
+                    .foregroundColor(.primary)
+                    .background(Color(.systemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                 } else {
@@ -138,8 +138,8 @@ struct FloatingLocationCard: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
                     .frame(width: cardWidth)
-                    .foregroundColor(.black)
-                    .background(Color.white)
+                    .foregroundColor(.primary)
+                    .background(Color(.systemBackground))
                     .clipShape(Capsule())
                     .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                 }

@@ -228,8 +228,8 @@ struct MapSelectionView: View {
                                 .padding(.horizontal, useLargePills ? 20 : 16)
                                 .padding(.vertical, useLargePills ? 10 : 6)
                                 .frame(width: cardWidth)
-                                .background(Color.white)
-                                .foregroundColor(.black)
+                                .background(Color(.systemBackground))
+                                .foregroundColor(.primary)
                                 .clipShape(useLargePills ? AnyShape(RoundedRectangle(cornerRadius: 16)) : AnyShape(Capsule()))
                                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                                 .offset(x: collapsedOffset)
@@ -372,7 +372,7 @@ struct MapSelectionView: View {
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 14)
-                            .background(Color.white)
+                            .background(Color(.secondarySystemBackground))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
 
                             Button("Cancel") {

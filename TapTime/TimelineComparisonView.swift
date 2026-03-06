@@ -67,6 +67,7 @@ private struct TimelineRowData: Identifiable {
     let timeZone: TimeZone
     let tzAbbrev: String
     let offsetLabel: String
+    let utcOffsetLabel: String
     let currentTimeLabel: String
     let slots: [TimelineSlot]
     let isUserLocation: Bool
@@ -259,12 +260,28 @@ struct TimelineComparisonView: View {
         Self.timeFormatter.timeZone = timeZone
         let currentTimeLabel = Self.timeFormatter.string(from: selectedDate)
 
+        // UTC offset label (e.g. "UTC+10", "UTC-5", "UTC+5:30")
+        let utcSeconds = timeZone.secondsFromGMT(for: selectedDate)
+        let utcOffsetLabel: String
+        if utcSeconds == 0 {
+            utcOffsetLabel = "UTC"
+        } else {
+            let utcH = utcSeconds / 3600
+            let utcM = abs(utcSeconds % 3600) / 60
+            if utcM == 0 {
+                utcOffsetLabel = "UTC\(utcH > 0 ? "+" : "")\(utcH)"
+            } else {
+                utcOffsetLabel = "UTC\(utcSeconds > 0 ? "+" : "-")\(abs(utcH)):\(String(format: "%02d", utcM))"
+            }
+        }
+
         return TimelineRowData(
             id: id,
             locationName: locationName,
             timeZone: timeZone,
             tzAbbrev: tzAbbrev,
             offsetLabel: offsetLabel,
+            utcOffsetLabel: utcOffsetLabel,
             currentTimeLabel: currentTimeLabel,
             slots: slots,
             isUserLocation: isUserLocation
@@ -472,13 +489,14 @@ private struct TimelineRowLabel: View {
     }
 
     var body: some View {
-        HStack(alignment: .lastTextBaseline, spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             // Home icon or offset
             if row.isUserLocation && row.offsetLabel.isEmpty {
                 Image(systemName: "location.fill")
                     .font(.system(size: 11))
                     .foregroundColor(.accentColor)
                     .frame(width: 28, alignment: .center)
+                    .padding(.top, 3)
             } else {
                 Text(row.offsetLabel)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -486,17 +504,23 @@ private struct TimelineRowLabel: View {
                     .foregroundColor(.secondary)
                     .frame(width: 38, alignment: .trailing)
                     .padding(.trailing, 4)
+                    .padding(.top, 3)
             }
 
-            // Name
-            Text(displayName)
-                .font(.system(size: 14, weight: .semibold))
-                .lineLimit(1)
+            // Name + timezone info
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .lastTextBaseline, spacing: 0) {
+                    Text(displayName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
+                }
 
-            // TZ abbreviation
-            Text(" \(row.tzAbbrev)")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
+                // Timezone name + UTC offset
+                Text("\(row.tzAbbrev) · \(row.utcOffsetLabel)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
 
             Spacer(minLength: 4)
 
@@ -505,9 +529,10 @@ private struct TimelineRowLabel: View {
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .monospacedDigit()
                 .padding(.trailing, 14)
+                .padding(.top, 3)
         }
         .padding(.leading, 10)
-        .padding(.top, 5)
+        .padding(.top, 2)
     }
 }
 
@@ -592,7 +617,7 @@ private struct NowMarker: View {
             let lastStripBottom = CGFloat(rowCount - 1) * blockH + labelHeight + stripHeight
             let fullRect = CGRect(x: snappedX, y: top, width: cellW, height: lastStripBottom - top)
             let box = Path(fullRect)
-            context.stroke(box, with: .color(.black.opacity(0.8)), lineWidth: 2.5)
+            context.stroke(box, with: .color(.primary.opacity(0.8)), lineWidth: 2.5)
         }
         .frame(width: totalW, height: totalHeight)
         .allowsHitTesting(false)
